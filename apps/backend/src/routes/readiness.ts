@@ -12,31 +12,80 @@ const readinessSchema = z.object({
   notes: z.string().max(500).optional()
 });
 
+const isoDatePatternString = "^\\d{4}-\\d{2}-\\d{2}$";
+const bearerSecurity = [{ bearerAuth: [] }];
+
+const validationErrorSchema = {
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    error: { type: "string" },
+    details: { type: "object", additionalProperties: true },
+    message: { type: "string" },
+    statusCode: { type: "integer" }
+  }
+} as const;
+
 export const readinessRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/readiness", { preHandler: authMiddleware }, async (request, reply) => {
-    const body = readinessSchema.parse(request.body);
-    const date = new Date(`${body.date}T00:00:00.000Z`);
-
-    await prisma.readinessEntry.upsert({
-      where: { userId_date: { userId: request.user.id, date } },
-      create: {
-        userId: request.user.id,
-        date,
-        sleepHours: body.sleepHours,
-        energy: body.energy,
-        soreness: body.soreness,
-        stress: body.stress,
-        notes: body.notes
-      },
-      update: {
-        sleepHours: body.sleepHours,
-        energy: body.energy,
-        soreness: body.soreness,
-        stress: body.stress,
-        notes: body.notes
+  app.post(
+    "/readiness",
+    {
+      preHandler: authMiddleware,
+      schema: {
+        tags: ["readiness"],
+        summary: "Create or update readiness entry for a date",
+        security: bearerSecurity,
+        body: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            date: { type: "string", pattern: isoDatePatternString },
+            sleepHours: { type: "integer", minimum: 0, maximum: 24 },
+            energy: { type: "integer", minimum: 1, maximum: 5 },
+            soreness: { type: "integer", minimum: 1, maximum: 5 },
+            stress: { type: "integer", minimum: 1, maximum: 5 },
+            notes: { type: "string", maxLength: 500 }
+          },
+          required: ["date", "sleepHours", "energy", "soreness", "stress"]
+        },
+        response: {
+          201: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              status: { type: "string", enum: ["success"] }
+            },
+            required: ["status"]
+          },
+          400: validationErrorSchema
+        }
       }
-    });
+    },
+    async (request, reply) => {
+      const body = readinessSchema.parse(request.body);
+      const date = new Date(`${body.date}T00:00:00.000Z`);
 
-    reply.code(201).send({ status: "success" });
-  });
+      await prisma.readinessEntry.upsert({
+        where: { userId_date: { userId: request.user.id, date } },
+        create: {
+          userId: request.user.id,
+          date,
+          sleepHours: body.sleepHours,
+          energy: body.energy,
+          soreness: body.soreness,
+          stress: body.stress,
+          notes: body.notes
+        },
+        update: {
+          sleepHours: body.sleepHours,
+          energy: body.energy,
+          soreness: body.soreness,
+          stress: body.stress,
+          notes: body.notes
+        }
+      });
+
+      reply.code(201).send({ status: "success" });
+    }
+  );
 };
