@@ -1,0 +1,36 @@
+import Fastify from "fastify";
+import { ZodError } from "zod";
+import { sessionsRoutes } from "./routes/sessions.js";
+import { readinessRoutes } from "./routes/readiness.js";
+import { plansRoutes } from "./routes/plans.js";
+
+export function buildServer() {
+  const app = Fastify({ logger: true });
+
+  app.register(sessionsRoutes);
+  app.register(readinessRoutes);
+  app.register(plansRoutes);
+
+  app.get("/health", async () => ({ status: "ok" }));
+
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      reply.code(400).send({ error: "Validation failed", details: error.flatten() });
+      return;
+    }
+
+    if (error.message === "User profile not found") {
+      reply.code(404).send({ error: error.message });
+      return;
+    }
+
+    if (error.message === "Session not found" || error.message === "Exercise not found") {
+      reply.code(404).send({ error: error.message });
+      return;
+    }
+
+    reply.code(500).send({ error: "Internal server error" });
+  });
+
+  return app;
+}

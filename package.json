@@ -1,0 +1,25 @@
+{
+  "name": "longevity",
+  "private": true,
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run -ws build",
+    "test": "npm run -ws test",
+    "typecheck": "npm run -ws typecheck"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.3.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.3.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.2"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}
