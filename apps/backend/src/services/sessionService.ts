@@ -6,7 +6,7 @@ import {
   type SessionExercise,
   type TrainingGoal
 } from "@longevity/engine";
-import type { Prisma } from "@prisma/client";
+import { SessionStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
 import { applyProgressionUpdate } from "./progressionService.js";
 
@@ -80,7 +80,7 @@ export async function generateWorkoutSession(
       sessionDate: parsedDate,
       engineVersion: workout.engineVersion,
       snapshot: workout as unknown as Prisma.InputJsonValue,
-      status: "PLANNED"
+      status: SessionStatus.PLANNED
     }
   });
 
@@ -117,13 +117,29 @@ export async function submitWorkoutResults(
     await tx.workoutSession.update({
       where: { id: sessionId },
       data: {
-        status: "COMPLETED",
+        status: SessionStatus.COMPLETED,
         submittedAt: new Date()
       }
     });
   });
 
   await applyProgressionUpdate(userId, results);
+
+  return { status: "success" };
+}
+
+export async function cancelWorkoutSession(userId: string, sessionId: string): Promise<{ status: "success" }> {
+  const session = await prisma.workoutSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.userId !== userId) {
+    throw new Error("Session not found");
+  }
+
+  await prisma.workoutSession.update({
+    where: { id: sessionId },
+    data: {
+      status: SessionStatus.CANCELLED
+    }
+  });
 
   return { status: "success" };
 }

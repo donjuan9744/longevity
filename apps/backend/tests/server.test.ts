@@ -28,6 +28,7 @@ const mockPrisma = vi.hoisted(() => ({
     findUnique: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   sessionResult: {
     create: vi.fn(),
@@ -514,6 +515,201 @@ describe("backend routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().status).toBe("success");
+    await app.close();
+  });
+
+  it("cancels a session and excludes it from weekly plan output", async () => {
+    const cancelledSessionId = "00000000-0000-0000-0000-000000000901";
+    let createdCount = 0;
+
+    mockPrisma.workoutSession.findUnique.mockResolvedValue({ id: cancelledSessionId, userId: "user-1" });
+    mockPrisma.workoutSession.update.mockResolvedValue({ id: cancelledSessionId, status: "CANCELLED" });
+    mockPrisma.userProfile.findUnique.mockResolvedValue({ userId: "user-1", goal: "balanced" });
+    mockPrisma.userProgram.findUnique.mockResolvedValue({ goal: "balanced", daysPerWeek: 3, active: true });
+    mockPrisma.progressionState.findUnique.mockResolvedValue({ strengthLevel: 3, volumeLevel: 3, fatigueScore: 0, deloadCount: 0 });
+    mockPrisma.readinessEntry.findMany.mockResolvedValue([]);
+    mockPrisma.exercise.findMany.mockResolvedValue([
+      {
+        id: "ex-1",
+        name: "Goblet Squat",
+        category: "compound",
+        movementPattern: "squat",
+        muscleGroup: "legs",
+        equipment: "dumbbell",
+        difficulty: 1,
+        isActive: true
+      },
+      {
+        id: "ex-2",
+        name: "90/90 Hip Switch",
+        category: "mobility",
+        movementPattern: "mobility",
+        muscleGroup: "legs",
+        equipment: "bodyweight",
+        difficulty: 1,
+        isActive: true
+      },
+      {
+        id: "ex-3",
+        name: "Box Breathing",
+        category: "accessory",
+        movementPattern: "core",
+        muscleGroup: "core",
+        equipment: "bodyweight",
+        difficulty: 1,
+        isActive: true
+      },
+      {
+        id: "ex-4",
+        name: "Incline Walk",
+        category: "conditioning",
+        movementPattern: "warmup",
+        muscleGroup: "full_body",
+        equipment: "machine",
+        difficulty: 1,
+        isActive: true
+      }
+    ]);
+    mockPrisma.workoutSession.findMany.mockResolvedValue([]);
+    mockPrisma.workoutSession.create.mockImplementation(async (args: { data: { sessionDate: Date } }) => {
+      createdCount += 1;
+      return {
+        id: `00000000-0000-0000-0000-00000000091${createdCount}`,
+        userId: "user-1",
+        sessionDate: args.data.sessionDate,
+        engineVersion: "v1",
+        snapshot: { exercises: [], engineVersion: "v1", notes: [] },
+        status: "PLANNED"
+      };
+    });
+
+    const app = buildServer();
+    const cancelResponse = await app.inject({
+      method: "DELETE",
+      url: `/sessions/${cancelledSessionId}`
+    });
+    expect(cancelResponse.statusCode).toBe(200);
+    expect(cancelResponse.json()).toEqual({ status: "success" });
+
+    const weekResponse = await app.inject({
+      method: "GET",
+      url: "/plans/week?start=2026-02-16&strengthDays=3"
+    });
+    expect(weekResponse.statusCode).toBe(200);
+    const returnedSessionIds = weekResponse
+      .json()
+      .days.filter((day: { type: string }) => day.type === "strength")
+      .map((day: { sessionId: string }) => day.sessionId);
+    expect(returnedSessionIds).not.toContain(cancelledSessionId);
+    await app.close();
+  });
+
+  it("cancels all sessions in a week and excludes them from weekly plan output", async () => {
+    const cancelledIds = [
+      "00000000-0000-0000-0000-000000000801",
+      "00000000-0000-0000-0000-000000000802",
+      "00000000-0000-0000-0000-000000000803"
+    ];
+    let createdCount = 0;
+
+    mockPrisma.workoutSession.updateMany.mockResolvedValue({ count: cancelledIds.length });
+    mockPrisma.userProfile.findUnique.mockResolvedValue({ userId: "user-1", goal: "balanced" });
+    mockPrisma.userProgram.findUnique.mockResolvedValue({ goal: "balanced", daysPerWeek: 3, active: true });
+    mockPrisma.progressionState.findUnique.mockResolvedValue({ strengthLevel: 3, volumeLevel: 3, fatigueScore: 0, deloadCount: 0 });
+    mockPrisma.readinessEntry.findMany.mockResolvedValue([]);
+    mockPrisma.exercise.findMany.mockResolvedValue([
+      {
+        id: "ex-1",
+        name: "Goblet Squat",
+        category: "compound",
+        movementPattern: "squat",
+        muscleGroup: "legs",
+        equipment: "dumbbell",
+        difficulty: 1,
+        isActive: true
+      },
+      {
+        id: "ex-2",
+        name: "90/90 Hip Switch",
+        category: "mobility",
+        movementPattern: "mobility",
+        muscleGroup: "legs",
+        equipment: "bodyweight",
+        difficulty: 1,
+        isActive: true
+      },
+      {
+        id: "ex-3",
+        name: "Box Breathing",
+        category: "accessory",
+        movementPattern: "core",
+        muscleGroup: "core",
+        equipment: "bodyweight",
+        difficulty: 1,
+        isActive: true
+      },
+      {
+        id: "ex-4",
+        name: "Incline Walk",
+        category: "conditioning",
+        movementPattern: "warmup",
+        muscleGroup: "full_body",
+        equipment: "machine",
+        difficulty: 1,
+        isActive: true
+      }
+    ]);
+    mockPrisma.workoutSession.findMany.mockResolvedValue([]);
+    mockPrisma.workoutSession.create.mockImplementation(async (args: { data: { sessionDate: Date } }) => {
+      createdCount += 1;
+      return {
+        id: `00000000-0000-0000-0000-00000000082${createdCount}`,
+        userId: "user-1",
+        sessionDate: args.data.sessionDate,
+        engineVersion: "v1",
+        snapshot: { exercises: [], engineVersion: "v1", notes: [] },
+        status: "PLANNED"
+      };
+    });
+
+    const app = buildServer();
+    const cancelResponse = await app.inject({
+      method: "DELETE",
+      url: "/plans/week?weekStart=2026-02-16"
+    });
+    expect(cancelResponse.statusCode).toBe(200);
+    expect(cancelResponse.json()).toEqual({
+      status: "success",
+      cancelledCount: cancelledIds.length,
+      weekStart: "2026-02-16",
+      weekEnd: "2026-02-22"
+    });
+    expect(mockPrisma.workoutSession.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        sessionDate: {
+          gte: new Date("2026-02-16T00:00:00.000Z"),
+          lt: new Date("2026-02-23T00:00:00.000Z")
+        },
+        status: {
+          not: "CANCELLED"
+        }
+      },
+      data: {
+        status: "CANCELLED"
+      }
+    });
+
+    const weekResponse = await app.inject({
+      method: "GET",
+      url: "/plans/week?start=2026-02-16&strengthDays=3"
+    });
+    expect(weekResponse.statusCode).toBe(200);
+    const returnedSessionIds = weekResponse
+      .json()
+      .days.filter((day: { type: string }) => day.type === "strength")
+      .map((day: { sessionId: string }) => day.sessionId);
+    expect(returnedSessionIds).not.toEqual(expect.arrayContaining(cancelledIds));
     await app.close();
   });
 

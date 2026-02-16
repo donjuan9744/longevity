@@ -1,5 +1,5 @@
 import { generateWeeklyPlan, type DayPlan, type GeneratedSession, type TrainingGoal } from "@longevity/engine";
-import type { Prisma } from "@prisma/client";
+import { SessionStatus, type Prisma } from "@prisma/client";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
@@ -28,6 +28,9 @@ const weekQuerySchema = z.object({
 const weekRefreshQuerySchema = z.object({
   weekStart: z.string().regex(isoDatePattern).optional(),
   start: z.string().regex(isoDatePattern).optional()
+});
+const weekCancelQuerySchema = z.object({
+  weekStart: z.string().regex(isoDatePattern)
 });
 
 type StrengthDays = 2 | 3 | 4 | 5;
@@ -333,6 +336,9 @@ async function buildWeeklyPlanForUser(params: {
         sessionDate: {
           gte: start,
           lt: end
+        },
+        status: {
+          not: SessionStatus.CANCELLED
         }
       },
       orderBy: [{ sessionDate: "asc" }, { createdAt: "asc" }]
@@ -390,7 +396,7 @@ async function buildWeeklyPlanForUser(params: {
             sessionDate: parseIsoDate(day.date),
             engineVersion: day.session.engineVersion,
             snapshot: day.session as unknown as Prisma.InputJsonValue,
-            status: "PLANNED"
+            status: SessionStatus.PLANNED
           }
         })
       )
@@ -404,7 +410,7 @@ async function buildWeeklyPlanForUser(params: {
   if (params.refreshPlannedStrengthSessions) {
     const refreshableStrengthDays = strengthDaysInWeek.filter((day) => {
       const session = sessionByDate.get(day.date);
-      return session?.status === "PLANNED";
+      return session?.status === SessionStatus.PLANNED;
     });
 
     if (refreshableStrengthDays.length > 0) {
@@ -420,7 +426,7 @@ async function buildWeeklyPlanForUser(params: {
             data: {
               engineVersion: day.session.engineVersion,
               snapshot: day.session as unknown as Prisma.InputJsonValue,
-              status: "PLANNED"
+              status: SessionStatus.PLANNED
             }
           });
         })
@@ -552,6 +558,73 @@ export const plansRoutes: FastifyPluginAsync = async (app) => {
         ...(startIso ? { startIso } : {}),
         refreshPlannedStrengthSessions: true
       });
+    }
+  );
+
+  app.delete(
+    "/plans/week",
+    {
+      preHandler: authMiddleware,
+      schema: {
+        tags: ["plans"],
+        summary: "Cancel all workout sessions in a week",
+        security: bearerSecurity,
+        querystring: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            weekStart: {
+              type: "string",
+              pattern: isoDatePatternString,
+              description: "Week start hint (YYYY-MM-DD). The endpoint normalizes to Monday UTC."
+            }
+          },
+          required: ["weekStart"]
+        },
+        response: {
+          200: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              status: { type: "string", enum: ["success"] },
+              cancelledCount: { type: "integer", minimum: 0 },
+              weekStart: { type: "string", pattern: isoDatePatternString },
+              weekEnd: { type: "string", pattern: isoDatePatternString }
+            },
+            required: ["status", "cancelledCount", "weekStart", "weekEnd"]
+          },
+          400: validationErrorSchema
+        }
+      }
+    },
+    async (request) => {
+      const query = weekCancelQuerySchema.parse(request.query);
+      const { start, end } = getWeekRange(query.weekStart);
+      const normalizedWeekStart = formatIsoDate(start);
+      const normalizedWeekEnd = formatIsoDate(addDays(end, -1));
+
+      const result = await prisma.workoutSession.updateMany({
+        where: {
+          userId: request.user.id,
+          sessionDate: {
+            gte: start,
+            lt: end
+          },
+          status: {
+            not: SessionStatus.CANCELLED
+          }
+        },
+        data: {
+          status: SessionStatus.CANCELLED
+        }
+      });
+
+      return {
+        status: "success" as const,
+        cancelledCount: result.count,
+        weekStart: normalizedWeekStart,
+        weekEnd: normalizedWeekEnd
+      };
     }
   );
 };
