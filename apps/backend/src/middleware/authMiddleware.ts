@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { jwtVerify } from "jose";
+import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from "jose";
 import { env } from "../config/env.js";
 
 declare module "fastify" {
@@ -18,6 +18,39 @@ interface SupabaseJwtPayload {
   aud?: string;
 }
 
+const JWKS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+let jwksCache:
+  | {
+      keySet: ReturnType<typeof createLocalJWKSet>;
+      expiresAt: number;
+    }
+  | undefined;
+
+async function getJwksKeySet(): Promise<ReturnType<typeof createLocalJWKSet>> {
+  if (jwksCache && jwksCache.expiresAt > Date.now()) {
+    return jwksCache.keySet;
+  }
+
+  const baseUrl = env.SUPABASE_URL.replace(/\/$/, "");
+  const jwksUrl = `${baseUrl}/auth/v1/.well-known/jwks.json`;
+  const response = await fetch(jwksUrl);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch Supabase JWKS");
+  }
+
+  const jwks = (await response.json()) as JSONWebKeySet;
+  const keySet = createLocalJWKSet(jwks);
+
+  jwksCache = {
+    keySet,
+    expiresAt: Date.now() + JWKS_CACHE_TTL_MS
+  };
+
+  return keySet;
+}
+
 export async function authMiddleware(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const authHeader = request.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -28,8 +61,9 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   const token = authHeader.slice("Bearer ".length);
 
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(env.SUPABASE_JWT_SECRET), {
-      algorithms: ["HS256"]
+    const jwks = await getJwksKeySet();
+    const { payload } = await jwtVerify(token, jwks, {
+      algorithms: ["ES256"]
     });
 
     const typedPayload = payload as unknown as SupabaseJwtPayload;
@@ -38,10 +72,14 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
       return;
     }
 
-    request.user = {
-      id: typedPayload.sub,
-      email: typedPayload.email
-    };
+    request.user = typedPayload.email
+      ? {
+          id: typedPayload.sub,
+          email: typedPayload.email
+        }
+      : {
+          id: typedPayload.sub
+        };
   } catch {
     reply.code(401).send({ error: "Invalid token" });
   }
