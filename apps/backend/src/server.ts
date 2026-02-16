@@ -5,37 +5,16 @@ import { ZodError } from "zod";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { readinessRoutes } from "./routes/readiness.js";
 import { plansRoutes } from "./routes/plans.js";
+import cors from "@fastify/cors";
 
-export function buildServer() {
+export async function buildServer() {
   const app = Fastify({ logger: true });
 
-  app.register(swagger, {
-    openapi: {
-      info: {
-        title: "Longevity API",
-        version: "1.0.0",
-      },
-      components: {
-        securitySchemes: {
-          bearerAuth: {
-            type: "http",
-            scheme: "bearer",
-            bearerFormat: "JWT"
-          }
-        }
-      }
-    },
+  await app.register(cors, {
+    origin: ["http://localhost:5173"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type"],
   });
-
-  app.register(swaggerUI, {
-    routePrefix: "/docs",
-  });
-
-  app.register(sessionsRoutes);
-  app.register(readinessRoutes);
-  app.register(plansRoutes);
-
-  app.get("/health", async () => ({ status: "ok" }));
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
@@ -67,6 +46,34 @@ export function buildServer() {
     request.log.error({ err: error }, "Unhandled route error");
     reply.code(500).send({ error: "Internal server error" });
   });
+
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: "Longevity API",
+        version: "1.0.0",
+      },
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "JWT",
+          },
+        },
+      },
+    },
+  });
+
+  await app.register(swaggerUI, {
+    routePrefix: "/docs",
+  });
+
+  await app.register(sessionsRoutes);
+  await app.register(readinessRoutes);
+  await app.register(plansRoutes);
+
+  app.get("/health", async () => ({ status: "ok" }));
 
   return app;
 }

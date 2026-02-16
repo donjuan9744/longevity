@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/api/plans.ts","./src/api/sessions.ts","./src/components/markcompletebutton.tsx","./src/pages/homepage.tsx","./src/pages/todaypage.tsx","./src/pages/weekpage.tsx","./src/types/api.ts","./src/utils/completion.ts","./src/utils/dates.ts"],"version":"5.9.3"}

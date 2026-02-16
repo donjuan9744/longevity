@@ -46,12 +46,129 @@ const mockPrisma = vi.hoisted(() => ({
     findUnique: vi.fn(),
     findMany: vi.fn(),
   },
+  weeklyPlanSeed: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+  },
   $transaction: vi.fn(async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma)),
 }));
 
 vi.mock("../src/db/prisma.js", () => ({
   prisma: mockPrisma
 }));
+
+const weeklyExercisePool = [
+  {
+    id: "ex-1",
+    name: "Goblet Squat",
+    category: "compound",
+    movementPattern: "squat",
+    muscleGroup: "legs",
+    equipment: "dumbbell",
+    difficulty: 1,
+    isActive: true
+  },
+  {
+    id: "ex-2",
+    name: "Romanian Deadlift",
+    category: "compound",
+    movementPattern: "hinge",
+    muscleGroup: "legs",
+    equipment: "barbell",
+    difficulty: 2,
+    isActive: true
+  },
+  {
+    id: "ex-3",
+    name: "Reverse Lunge",
+    category: "accessory",
+    movementPattern: "lunge",
+    muscleGroup: "legs",
+    equipment: "dumbbell",
+    difficulty: 2,
+    isActive: true
+  },
+  {
+    id: "ex-4",
+    name: "Bench Press",
+    category: "compound",
+    movementPattern: "push",
+    muscleGroup: "chest",
+    equipment: "barbell",
+    difficulty: 2,
+    isActive: true
+  },
+  {
+    id: "ex-5",
+    name: "Overhead Press",
+    category: "compound",
+    movementPattern: "overhead_push",
+    muscleGroup: "shoulders",
+    equipment: "dumbbell",
+    difficulty: 2,
+    isActive: true
+  },
+  {
+    id: "ex-6",
+    name: "Bent Over Row",
+    category: "compound",
+    movementPattern: "pull",
+    muscleGroup: "back",
+    equipment: "barbell",
+    difficulty: 2,
+    isActive: true
+  },
+  {
+    id: "ex-7",
+    name: "Lat Pulldown",
+    category: "accessory",
+    movementPattern: "overhead_pull",
+    muscleGroup: "back",
+    equipment: "machine",
+    difficulty: 1,
+    isActive: true
+  },
+  {
+    id: "ex-8",
+    name: "Farmer Carry",
+    category: "accessory",
+    movementPattern: "carry",
+    muscleGroup: "core",
+    equipment: "dumbbell",
+    difficulty: 1,
+    isActive: true
+  },
+  {
+    id: "ex-9",
+    name: "Pallof Press",
+    category: "accessory",
+    movementPattern: "core",
+    muscleGroup: "core",
+    equipment: "cable",
+    difficulty: 1,
+    isActive: true
+  },
+  {
+    id: "ex-10",
+    name: "90/90 Hip Switch",
+    category: "mobility",
+    movementPattern: "mobility",
+    muscleGroup: "legs",
+    equipment: "bodyweight",
+    difficulty: 1,
+    isActive: true
+  },
+  {
+    id: "ex-11",
+    name: "Assault Bike",
+    category: "conditioning",
+    movementPattern: "warmup",
+    muscleGroup: "full_body",
+    equipment: "machine",
+    difficulty: 1,
+    isActive: true
+  }
+];
 
 describe("backend routes", () => {
   beforeEach(() => {
@@ -117,7 +234,7 @@ describe("backend routes", () => {
     mockPrisma.userProgram.findUnique.mockResolvedValue({ goal: "balanced", daysPerWeek: 4, active: true });
     mockPrisma.workoutSession.create.mockResolvedValue({ id: "00000000-0000-0000-0000-000000000001" });
 
-    const app = buildServer();
+    const app = await buildServer();
     const response = await app.inject({
       method: "POST",
       url: "/sessions/generate",
@@ -131,7 +248,7 @@ describe("backend routes", () => {
 
   it("stores readiness", async () => {
     mockPrisma.readinessEntry.upsert.mockResolvedValue({ id: "r1" });
-    const app = buildServer();
+    const app = await buildServer();
 
     const response = await app.inject({
       method: "POST",
@@ -220,7 +337,7 @@ describe("backend routes", () => {
         status: "PLANNED"
       };
     });
-    const app = buildServer();
+    const app = await buildServer();
 
     const response = await app.inject({
       method: "GET",
@@ -356,7 +473,7 @@ describe("backend routes", () => {
       status: args.data.status
     }));
 
-    const app = buildServer();
+    const app = await buildServer();
     const response = await app.inject({
       method: "POST",
       url: "/plans/week/refresh?weekStart=2026-02-16"
@@ -475,7 +592,7 @@ describe("backend routes", () => {
       }
     ]);
 
-    const app = buildServer();
+    const app = await buildServer();
     const response = await app.inject({
       method: "POST",
       url: "/plans/week/refresh?weekStart=2026-02-16"
@@ -488,6 +605,169 @@ describe("backend routes", () => {
     await app.close();
   });
 
+  it("refreshes with a new persisted seed and changes at least one strength session", async () => {
+    const weekDates = ["2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21", "2026-02-22"];
+    const sessions = weekDates.map((date, index) => ({
+      id: `00000000-0000-0000-0000-0000000003${index + 1}0`,
+      userId: "user-1",
+      sessionDate: new Date(`${date}T00:00:00.000Z`),
+      engineVersion: "v0",
+      snapshot: { exercises: [], engineVersion: "v1", notes: ["old"] },
+      status: "PLANNED"
+    }));
+
+    mockPrisma.userProfile.findUnique.mockResolvedValue({ userId: "user-1", goal: "balanced" });
+    mockPrisma.userProgram.findUnique.mockResolvedValue({ goal: "balanced", daysPerWeek: 4, active: true });
+    mockPrisma.progressionState.findUnique.mockResolvedValue({ strengthLevel: 3, volumeLevel: 3, fatigueScore: 0, deloadCount: 0 });
+    mockPrisma.readinessEntry.findMany.mockResolvedValue([]);
+    mockPrisma.exercise.findMany.mockResolvedValue(weeklyExercisePool);
+    mockPrisma.weeklyPlanSeed.upsert.mockImplementation(async (args: { create: { seed: number } }) => ({
+      id: "weekly-seed-1",
+      userId: "user-1",
+      weekStart: new Date("2026-02-16T00:00:00.000Z"),
+      seed: args.create.seed,
+      updatedAt: new Date("2026-02-16T00:00:00.000Z")
+    }));
+    mockPrisma.workoutSession.findMany.mockImplementation(async () => sessions);
+    mockPrisma.workoutSession.update.mockImplementation(async (args: {
+      where: { id: string };
+      data: { engineVersion: string; snapshot: unknown; status: string };
+    }) => {
+      const session = sessions.find((entry) => entry.id === args.where.id);
+      if (!session) {
+        throw new Error("Session not found");
+      }
+      session.engineVersion = args.data.engineVersion;
+      session.snapshot = args.data.snapshot as { exercises: unknown[]; engineVersion: string; notes: string[] };
+      session.status = args.data.status;
+      return session;
+    });
+
+    const dateNowSpy = vi.spyOn(Date, "now");
+    dateNowSpy.mockReturnValueOnce(1700000000000).mockReturnValueOnce(1700000001000);
+
+    const app = await buildServer();
+    const firstRefresh = await app.inject({
+      method: "POST",
+      url: "/plans/week/refresh?weekStart=2026-02-16"
+    });
+    const secondRefresh = await app.inject({
+      method: "POST",
+      url: "/plans/week/refresh?weekStart=2026-02-16"
+    });
+
+    expect(firstRefresh.statusCode).toBe(200);
+    expect(secondRefresh.statusCode).toBe(200);
+    expect(firstRefresh.json().planSeed).not.toBe(secondRefresh.json().planSeed);
+
+    const firstStrength = firstRefresh
+      .json()
+      .days.filter((day: { type: string }) => day.type === "strength")
+      .map((day: { session: { exercises: Array<{ exerciseId: string }> } }) =>
+        day.session.exercises.map((exercise) => exercise.exerciseId).join("|")
+      );
+    const secondStrength = secondRefresh
+      .json()
+      .days.filter((day: { type: string }) => day.type === "strength")
+      .map((day: { session: { exercises: Array<{ exerciseId: string }> } }) =>
+        day.session.exercises.map((exercise) => exercise.exerciseId).join("|")
+      );
+
+    expect(firstStrength).not.toEqual(secondStrength);
+    expect(mockPrisma.weeklyPlanSeed.upsert).toHaveBeenCalledTimes(2);
+
+    dateNowSpy.mockRestore();
+    await app.close();
+  });
+
+  it("returns the refreshed plan on later GET for the same week", async () => {
+    const weekDates = ["2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21", "2026-02-22"];
+    const sessions = weekDates.map((date, index) => ({
+      id: `00000000-0000-0000-0000-0000000004${index + 1}0`,
+      userId: "user-1",
+      sessionDate: new Date(`${date}T00:00:00.000Z`),
+      engineVersion: "v0",
+      snapshot: { exercises: [], engineVersion: "v1", notes: ["old"] },
+      status: "PLANNED"
+    }));
+    let persistedSeed: number | null = null;
+
+    mockPrisma.userProfile.findUnique.mockResolvedValue({ userId: "user-1", goal: "balanced" });
+    mockPrisma.userProgram.findUnique.mockResolvedValue({ goal: "balanced", daysPerWeek: 4, active: true });
+    mockPrisma.progressionState.findUnique.mockResolvedValue({ strengthLevel: 3, volumeLevel: 3, fatigueScore: 0, deloadCount: 0 });
+    mockPrisma.readinessEntry.findMany.mockResolvedValue([]);
+    mockPrisma.exercise.findMany.mockResolvedValue(weeklyExercisePool);
+    mockPrisma.weeklyPlanSeed.upsert.mockImplementation(async (args: { create: { seed: number } }) => {
+      persistedSeed = args.create.seed;
+      return {
+        id: "weekly-seed-2",
+        userId: "user-1",
+        weekStart: new Date("2026-02-16T00:00:00.000Z"),
+        seed: persistedSeed,
+        updatedAt: new Date("2026-02-16T00:00:00.000Z")
+      };
+    });
+    mockPrisma.weeklyPlanSeed.findUnique.mockImplementation(async () =>
+      persistedSeed === null
+        ? null
+        : {
+            id: "weekly-seed-2",
+            userId: "user-1",
+            weekStart: new Date("2026-02-16T00:00:00.000Z"),
+            seed: persistedSeed,
+            updatedAt: new Date("2026-02-16T00:00:00.000Z")
+          }
+    );
+    mockPrisma.workoutSession.findMany.mockImplementation(async () => sessions);
+    mockPrisma.workoutSession.update.mockImplementation(async (args: {
+      where: { id: string };
+      data: { engineVersion: string; snapshot: unknown; status: string };
+    }) => {
+      const session = sessions.find((entry) => entry.id === args.where.id);
+      if (!session) {
+        throw new Error("Session not found");
+      }
+      session.engineVersion = args.data.engineVersion;
+      session.snapshot = args.data.snapshot as { exercises: unknown[]; engineVersion: string; notes: string[] };
+      session.status = args.data.status;
+      return session;
+    });
+
+    vi.spyOn(Date, "now").mockReturnValue(1700000010000);
+
+    const app = await buildServer();
+    const refreshResponse = await app.inject({
+      method: "POST",
+      url: "/plans/week/refresh?weekStart=2026-02-16"
+    });
+    const getResponse = await app.inject({
+      method: "GET",
+      url: "/plans/week?start=2026-02-16"
+    });
+
+    expect(refreshResponse.statusCode).toBe(200);
+    expect(getResponse.statusCode).toBe(200);
+    expect(getResponse.json().planSeed).toBe(refreshResponse.json().planSeed);
+
+    const refreshStrength = refreshResponse
+      .json()
+      .days.filter((day: { type: string }) => day.type === "strength")
+      .map((day: { session: { exercises: Array<{ exerciseId: string }> } }) =>
+        day.session.exercises.map((exercise) => exercise.exerciseId).join("|")
+      );
+    const getStrength = getResponse
+      .json()
+      .days.filter((day: { type: string }) => day.type === "strength")
+      .map((day: { session: { exercises: Array<{ exerciseId: string }> } }) =>
+        day.session.exercises.map((exercise) => exercise.exerciseId).join("|")
+      );
+
+    expect(getStrength).toEqual(refreshStrength);
+    expect(mockPrisma.weeklyPlanSeed.findUnique).toHaveBeenCalled();
+    vi.restoreAllMocks();
+    await app.close();
+  });
+
   it("submits session results", async () => {
     mockPrisma.workoutSession.findUnique.mockResolvedValue({ id: "00000000-0000-0000-0000-000000000001", userId: "user-1" });
     mockPrisma.sessionResult.createMany.mockResolvedValue({ count: 1 });
@@ -495,7 +775,7 @@ describe("backend routes", () => {
     mockPrisma.progressionState.findUnique.mockResolvedValue({ strengthLevel: 3, volumeLevel: 3, fatigueScore: 2, deloadCount: 0 });
     mockPrisma.progressionState.upsert.mockResolvedValue({ id: "p1" });
 
-    const app = buildServer();
+    const app = await buildServer();
     const response = await app.inject({
       method: "POST",
       url: "/sessions/00000000-0000-0000-0000-000000000001/submit",
@@ -583,7 +863,7 @@ describe("backend routes", () => {
       };
     });
 
-    const app = buildServer();
+    const app = await buildServer();
     const cancelResponse = await app.inject({
       method: "DELETE",
       url: `/sessions/${cancelledSessionId}`
@@ -672,7 +952,7 @@ describe("backend routes", () => {
       };
     });
 
-    const app = buildServer();
+    const app = await buildServer();
     const cancelResponse = await app.inject({
       method: "DELETE",
       url: "/plans/week?weekStart=2026-02-16"
@@ -722,7 +1002,7 @@ describe("backend routes", () => {
     });
     mockPrisma.exercise.findMany.mockResolvedValue([{ id: "ex-2", name: "Front Squat" }]);
 
-    const app = buildServer();
+    const app = await buildServer();
     const response = await app.inject({
       method: "POST",
       url: "/sessions/00000000-0000-0000-0000-000000000001/swap",
@@ -767,7 +1047,7 @@ describe("backend routes", () => {
       });
     mockPrisma.workoutSession.update.mockResolvedValue({ id: "00000000-0000-0000-0000-000000000001" });
 
-    const app = buildServer();
+    const app = await buildServer();
     const response = await app.inject({
       method: "POST",
       url: "/sessions/00000000-0000-0000-0000-000000000001/swap/apply",
@@ -840,7 +1120,7 @@ describe("backend routes", () => {
         isActive: true
       });
 
-    const app = buildServer();
+    const app = await buildServer();
     const response = await app.inject({
       method: "POST",
       url: "/sessions/00000000-0000-0000-0000-000000000001/swap/apply",

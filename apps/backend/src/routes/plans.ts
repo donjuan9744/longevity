@@ -38,6 +38,7 @@ type StrengthDays = 2 | 3 | 4 | 5;
 type WeekPlanResponse = {
   weekStart: string;
   weekEnd: string;
+  planSeed?: number;
   engineVersion: string;
   program: {
     goal: string;
@@ -216,12 +217,29 @@ function average(values: number[]): number | undefined {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+function resolveDefaultPlanSeed(weekStartIso: string): number {
+  return Number(weekStartIso.replaceAll("-", ""));
+}
+
+function createWeekRefreshSeed(userId: string, weekStartIso: string): number {
+  const input = `${Date.now()}:${userId}:${weekStartIso}`;
+  let hash = 0;
+
+  for (const char of input) {
+    hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  }
+
+  const bounded = Math.abs(hash % 2147483647);
+  return bounded === 0 ? 1 : bounded;
+}
+
 const weekPlanResponseSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
     weekStart: { type: "string", pattern: isoDatePatternString },
     weekEnd: { type: "string", pattern: isoDatePatternString },
+    planSeed: { type: "integer" },
     engineVersion: { type: "string" },
     program: {
       anyOf: [
@@ -308,13 +326,15 @@ async function buildWeeklyPlanForUser(params: {
   startIso?: string;
   strengthDaysOverride?: number;
   refreshPlannedStrengthSessions: boolean;
+  seedOverride?: number;
 }): Promise<WeekPlanResponse> {
   const { start, end } = getWeekRange(params.startIso);
   const weekStart = formatIsoDate(start);
   const weekEnd = formatIsoDate(addDays(end, -1));
+  const weekStartDate = parseIsoDate(weekStart);
   const readinessTrendStart = addDays(start, -14);
 
-  const [userProfile, program, progression, readinessEntries, exercises, existingSessions] = await Promise.all([
+  const [userProfile, program, progression, readinessEntries, exercises, existingSessions, persistedPlanSeed] = await Promise.all([
     prisma.userProfile.findUnique({ where: { userId: params.userId } }),
     prisma.userProgram.findUnique({ where: { userId: params.userId } }),
     prisma.progressionState.findUnique({ where: { userId: params.userId } }),
@@ -342,7 +362,17 @@ async function buildWeeklyPlanForUser(params: {
         }
       },
       orderBy: [{ sessionDate: "asc" }, { createdAt: "asc" }]
-    })
+    }),
+    typeof params.seedOverride === "number"
+      ? Promise.resolve(null)
+      : prisma.weeklyPlanSeed.findUnique({
+          where: {
+            userId_weekStart: {
+              userId: params.userId,
+              weekStart: weekStartDate
+            }
+          }
+        })
   ]);
 
   const strengthDays = resolveStrengthDays(params.strengthDaysOverride ?? program?.daysPerWeek);
@@ -351,6 +381,7 @@ async function buildWeeklyPlanForUser(params: {
   const avgEnergy = average(readinessEntries.map((entry) => entry.energy));
   const avgSoreness = average(readinessEntries.map((entry) => entry.soreness));
   const avgStress = average(readinessEntries.map((entry) => entry.stress));
+  const planSeed = params.seedOverride ?? persistedPlanSeed?.seed ?? resolveDefaultPlanSeed(weekStart);
   const readinessTrend = readinessEntries.length
     ? {
         ...(typeof avgSleep === "number" ? { avgSleep } : {}),
@@ -362,6 +393,7 @@ async function buildWeeklyPlanForUser(params: {
 
   const generated = generateWeeklyPlan({
     weekStart,
+    seed: planSeed,
     strengthDays,
     goal,
     progression: {
@@ -469,6 +501,7 @@ async function buildWeeklyPlanForUser(params: {
   return {
     weekStart,
     weekEnd,
+    planSeed,
     engineVersion: generated.engineVersion,
     program: program
       ? {
@@ -552,11 +585,33 @@ export const plansRoutes: FastifyPluginAsync = async (app) => {
     async (request) => {
       const query = weekRefreshQuerySchema.parse(request.query);
       const startIso = query.weekStart ?? query.start;
+      const { start } = getWeekRange(startIso);
+      const normalizedWeekStart = formatIsoDate(start);
+      const normalizedWeekStartDate = parseIsoDate(normalizedWeekStart);
+      const weekSeed = createWeekRefreshSeed(request.user.id, normalizedWeekStart);
+
+      await prisma.weeklyPlanSeed.upsert({
+        where: {
+          userId_weekStart: {
+            userId: request.user.id,
+            weekStart: normalizedWeekStartDate
+          }
+        },
+        create: {
+          userId: request.user.id,
+          weekStart: normalizedWeekStartDate,
+          seed: weekSeed
+        },
+        update: {
+          seed: weekSeed
+        }
+      });
 
       return buildWeeklyPlanForUser({
         userId: request.user.id,
-        ...(startIso ? { startIso } : {}),
-        refreshPlannedStrengthSessions: true
+        startIso: normalizedWeekStart,
+        refreshPlannedStrengthSessions: true,
+        seedOverride: weekSeed
       });
     }
   );

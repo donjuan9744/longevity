@@ -1,0 +1,74 @@
+# Codex: UI v1 — Mark Today Complete (submit results)
+
+You are working in this monorepo:
+- Backend: apps/backend (Fastify)
+- Web UI: apps/web (Vite + React + TS)
+
+Goal
+Implement a "Mark Complete" button on the Today card (today-first UI) that completes the workout by calling:
+
+POST /sessions/{id}/submit
+
+We will complete in v1 by submitting results where completedSets/reps match plannedSets/reps for each exercise in the session (quick path).
+
+Requirements
+1) UI
+- On the Today view card, add a primary button: "Mark Complete"
+- Button is visible ONLY if:
+  - Today's day has a strength session with sessionId OR has a non-strength session with a known sessionId if present.
+  - If there is no sessionId available for the day, hide button (do not crash).
+- On click:
+  - Confirm dialog: "Mark this workout complete?"
+  - If confirmed: call the submit endpoint and show loading state.
+  - On success:
+    - Show a success toast/message ("Workout marked complete.")
+    - Disable the button for this session (local state is fine for v1).
+    - Optionally refresh the week data by calling the existing fetch week function after submit succeeds.
+  - On failure:
+    - Show a user-friendly error message and keep button enabled.
+
+2) API client
+- Implement an API function in apps/web/src/api (create a file if needed) e.g. submitSessionResults(sessionId, results)
+- Base URL uses existing UI config/env (whatever the UI currently uses).
+- Authorization:
+  - Use `VITE_API_TOKEN` already used in UI fetch calls.
+  - Send `Authorization: Bearer <token>`.
+
+3) Payload mapping
+Given the “today” session exercises already rendered in UI, construct request body:
+
+{
+  "results": [
+    {
+      "exerciseId": "<exercise.exerciseId>",
+      "plannedSets": <exercise.sets>,
+      "plannedReps": <exercise.reps>,
+      "completedSets": <exercise.sets>,
+      "completedReps": <exercise.reps>,
+      "rpe": <exercise.intensity>
+    },
+    ...
+  ]
+}
+
+Notes:
+- `exerciseId` is the engine exercise id already in the session list.
+- Use exercise.intensity as rpe (good enough for v1). If missing, default rpe to 7.
+
+4) Keep changes small
+- Do not redesign the UI.
+- Do not change backend.
+- Keep styling consistent with current Home page.
+
+5) Verification
+- `npm --workspace apps/web run build` must pass.
+- Manual test: open UI, click Mark Complete, verify 200 response, and UI shows success + disabled button.
+
+Files likely touched (don’t assume; follow existing structure):
+- apps/web/src/pages/HomePage.tsx (or wherever Today card is)
+- apps/web/src/api/*.ts (new or existing)
+- any shared types/helpers as needed
+
+Deliverables
+- Working "Mark Complete" on Today card using POST /sessions/{id}/submit
+- Build passes

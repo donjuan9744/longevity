@@ -2,7 +2,7 @@ import { env } from "./config/env.js";
 import { buildServer } from "./server.js";
 import { prisma } from "./db/prisma.js";
 
-const app = buildServer();
+const app = await buildServer();
 
 const start = async (): Promise<void> => {
   try {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { authMiddleware } from "../middleware/authMiddleware.js";
-import { applyExerciseSwap, generateWorkoutSession, submitWorkoutResults, swapExercise } from "../services/sessionService.js";
+import { applyExerciseSwap, cancelWorkoutSession, generateWorkoutSession, submitWorkoutResults, swapExercise } from "../services/sessionService.js";
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const isoDatePatternString = "^\\d{4}-\\d{2}-\\d{2}$";
 function getTodayIsoDate() {
@@ -88,6 +88,36 @@ export const sessionsRoutes = async (app) => {
     }, async (request) => {
         const body = generateBodySchema.parse(request.body);
         return generateWorkoutSession(request.user.id, body.date ?? getTodayIsoDate());
+    });
+    app.delete("/sessions/:id", {
+        preHandler: authMiddleware,
+        schema: {
+            tags: ["sessions"],
+            summary: "Cancel a workout session",
+            security: bearerSecurity,
+            params: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    id: { type: "string", format: "uuid" }
+                },
+                required: ["id"]
+            },
+            response: {
+                200: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                        status: { type: "string", enum: ["success"] }
+                    },
+                    required: ["status"]
+                },
+                400: validationErrorSchema
+            }
+        }
+    }, async (request) => {
+        const params = z.object({ id: z.string().uuid() }).parse(request.params);
+        return cancelWorkoutSession(request.user.id, params.id);
     });
     app.post("/sessions/:id/submit", {
         preHandler: authMiddleware,
