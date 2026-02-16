@@ -45,6 +45,7 @@ npm test
 - `POST /sessions/generate`
 - `POST /sessions/:id/submit`
 - `POST /sessions/:id/swap`
+- `POST /sessions/:id/swap/apply`
 - `POST /readiness`
 - `GET /plans/week`
 

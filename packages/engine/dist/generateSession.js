@@ -15,12 +15,41 @@ function createDeterministicOrder(exercises, seed) {
         return aScore - bScore || a.name.localeCompare(b.name);
     });
 }
+function selectBalancedExercises(ordered, maxExercises = 5) {
+    const selected = [];
+    const selectedIds = new Set();
+    const addExercise = (exercise) => {
+        if (!exercise || selectedIds.has(exercise.id) || selected.length >= maxExercises) {
+            return;
+        }
+        selected.push(exercise);
+        selectedIds.add(exercise.id);
+    };
+    const byCompoundThenAny = (matcher) => ordered.find((exercise) => !selectedIds.has(exercise.id) && exercise.category === "compound" && matcher(exercise)) ??
+        ordered.find((exercise) => !selectedIds.has(exercise.id) && matcher(exercise));
+    addExercise(byCompoundThenAny((exercise) => ["squat", "hinge", "lunge"].includes(exercise.movementPattern)));
+    addExercise(byCompoundThenAny((exercise) => ["push", "overhead_push"].includes(exercise.movementPattern)));
+    addExercise(byCompoundThenAny((exercise) => ["pull", "overhead_pull"].includes(exercise.movementPattern)));
+    addExercise(ordered.find((exercise) => !selectedIds.has(exercise.id) && ["core", "carry"].includes(exercise.movementPattern)));
+    addExercise(ordered.find((exercise) => !selectedIds.has(exercise.id) &&
+        (exercise.category === "mobility" || ["mobility", "warmup"].includes(exercise.movementPattern))));
+    const remaining = ordered.filter((exercise) => !selectedIds.has(exercise.id));
+    while (selected.length < maxExercises && remaining.length > 0) {
+        const selectedPatterns = new Set(selected.map((exercise) => exercise.movementPattern));
+        const varietyIndex = remaining.findIndex((exercise) => !selectedPatterns.has(exercise.movementPattern));
+        const pickIndex = varietyIndex >= 0 ? varietyIndex : 0;
+        const [next] = remaining.splice(pickIndex, 1);
+        addExercise(next);
+    }
+    return selected;
+}
 export function generateSession(input) {
     const readinessScore = scoreReadiness(input.readiness);
     const progressionBias = input.progression.volumeLevel + input.progression.strengthLevel;
     const seed = input.seed ?? Number(input.date.replaceAll("-", ""));
     const ordered = createDeterministicOrder(input.exercisePool, seed);
-    const selected = ordered.slice(0, Math.min(5, ordered.length));
+    const maxExercises = input.goal === "balanced" && input.exercisePool.length === 6 ? 6 : 5;
+    const selected = selectBalancedExercises(ordered, maxExercises);
     const baseSets = Math.max(2, Math.min(5, 3 + Math.floor(progressionBias / 4) + (readinessScore >= 2 ? 1 : 0)));
     const baseReps = input.goal === "strength" ? 6 : input.goal === "mobility" ? 10 : 8;
     const exercises = selected.map((exercise, index) => {

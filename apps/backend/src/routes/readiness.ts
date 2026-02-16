@@ -74,14 +74,14 @@ export const readinessRoutes: FastifyPluginAsync = async (app) => {
           energy: body.energy,
           soreness: body.soreness,
           stress: body.stress,
-          notes: body.notes
+          ...(typeof body.notes === "string" ? { notes: body.notes } : {})
         },
         update: {
           sleepHours: body.sleepHours,
           energy: body.energy,
           soreness: body.soreness,
           stress: body.stress,
-          notes: body.notes
+          ...(typeof body.notes === "string" ? { notes: body.notes } : {})
         }
       });
 

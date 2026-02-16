@@ -13,3 +13,7 @@ export declare function swapExercise(userId: string, sessionId: string, exercise
         name: string;
     }>;
 }>;
+export declare function applyExerciseSwap(userId: string, sessionId: string, fromExerciseId: string, toExerciseId: string): Promise<{
+    status: "success";
+    exercises: SessionExercise[];
+}>;

@@ -13,6 +13,15 @@ export function buildServer() {
                 title: "Longevity API",
                 version: "1.0.0",
             },
+            components: {
+                securitySchemes: {
+                    bearerAuth: {
+                        type: "http",
+                        scheme: "bearer",
+                        bearerFormat: "JWT"
+                    }
+                }
+            }
         },
     });
     app.register(swaggerUI, {
@@ -22,7 +31,7 @@ export function buildServer() {
     app.register(readinessRoutes);
     app.register(plansRoutes);
     app.get("/health", async () => ({ status: "ok" }));
-    app.setErrorHandler((error, _request, reply) => {
+    app.setErrorHandler((error, request, reply) => {
         if (error instanceof ZodError) {
             reply.code(400).send({ error: "Validation failed", details: error.flatten() });
             return;
@@ -36,7 +45,14 @@ export function buildServer() {
                 reply.code(404).send({ error: error.message });
                 return;
             }
+            if (error.message === "Invalid swap target" ||
+                error.message === "Exercise not in session" ||
+                error.message === "Exercise already in session. Choose another candidate.") {
+                reply.code(400).send({ error: error.message });
+                return;
+            }
         }
+        request.log.error({ err: error }, "Unhandled route error");
         reply.code(500).send({ error: "Internal server error" });
     });
     return app;

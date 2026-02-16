@@ -1,7 +1,12 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/authMiddleware.js";
-import { generateWorkoutSession, submitWorkoutResults, swapExercise } from "../services/sessionService.js";
+import {
+  applyExerciseSwap,
+  generateWorkoutSession,
+  submitWorkoutResults,
+  swapExercise
+} from "../services/sessionService.js";
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const isoDatePatternString = "^\\d{4}-\\d{2}-\\d{2}$";
@@ -31,6 +36,11 @@ const submitBodySchema = z.object({
 
 const swapBodySchema = z.object({
   exerciseId: z.string().min(1)
+});
+
+const applySwapBodySchema = z.object({
+  fromExerciseId: z.string().min(1),
+  toExerciseId: z.string().min(1)
 });
 
 const bearerSecurity = [{ bearerAuth: [] }];
@@ -215,6 +225,67 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
       const body = swapBodySchema.parse(request.body);
 
       return swapExercise(request.user.id, params.id, body.exerciseId);
+    }
+  );
+
+  app.post(
+    "/sessions/:id/swap/apply",
+    {
+      preHandler: authMiddleware,
+      schema: {
+        tags: ["sessions"],
+        summary: "Apply an exercise swap in a planned session snapshot",
+        security: bearerSecurity,
+        params: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            id: { type: "string", format: "uuid" }
+          },
+          required: ["id"]
+        },
+        body: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            fromExerciseId: { type: "string", minLength: 1 },
+            toExerciseId: { type: "string", minLength: 1 }
+          },
+          required: ["fromExerciseId", "toExerciseId"]
+        },
+        response: {
+          200: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              status: { type: "string", enum: ["success"] },
+              exercises: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    exerciseId: { type: "string", minLength: 1 },
+                    name: { type: "string" },
+                    sets: { type: "integer", minimum: 1 },
+                    reps: { type: "integer", minimum: 1 },
+                    intensity: { type: "number", minimum: 0 }
+                  },
+                  required: ["exerciseId", "name", "sets", "reps", "intensity"]
+                }
+              }
+            },
+            required: ["status", "exercises"]
+          },
+          400: validationErrorSchema
+        }
+      }
+    },
+    async (request) => {
+      const params = z.object({ id: z.string().uuid() }).parse(request.params);
+      const body = applySwapBodySchema.parse(request.body);
+
+      return applyExerciseSwap(request.user.id, params.id, body.fromExerciseId, body.toExerciseId);
     }
   );
 };

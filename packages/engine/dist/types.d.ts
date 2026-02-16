@@ -1,9 +1,10 @@
 export type TrainingGoal = "strength" | "hypertrophy" | "mobility" | "balanced";
+export type StrengthTemplate = "balanced" | "strength" | "mobility";
 export interface ExerciseDefinition {
     id: string;
     name: string;
-    category: "compound" | "accessory" | "mobility";
-    movementPattern: "squat" | "hinge" | "push" | "pull" | "carry" | "core" | "mobility";
+    category: "compound" | "accessory" | "mobility" | "conditioning";
+    movementPattern: "squat" | "hinge" | "lunge" | "push" | "overhead_push" | "pull" | "overhead_pull" | "carry" | "core" | "calf" | "balance" | "mobility" | "warmup";
     muscleGroup: "legs" | "back" | "chest" | "shoulders" | "arms" | "core" | "full_body";
     equipment: "barbell" | "dumbbell" | "cable" | "machine" | "bodyweight";
     difficulty: 1 | 2 | 3;
