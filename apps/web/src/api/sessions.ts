@@ -21,9 +21,17 @@ type SessionResultInput = {
 
 export async function completeSession(
   sessionId: string,
-  exercises: SessionResultInput[]
+  exercises: SessionResultInput[],
+  demoClientId?: string
 ): Promise<void> {
-  await apiFetch<{ status: string }>(`/sessions/${sessionId}/complete`, {
+  const params = new URLSearchParams();
+  if (demoClientId) {
+    params.set('demoClientId', demoClientId);
+  }
+  const query = params.toString();
+  const endpoint = query ? `/sessions/${sessionId}/submit?${query}` : `/sessions/${sessionId}/submit`;
+
+  await apiFetch<{ status: string }>(endpoint, {
     method: 'POST',
     body: JSON.stringify({
       results: exercises.map((exercise) => ({

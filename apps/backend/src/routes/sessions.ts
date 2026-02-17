@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import {
@@ -34,6 +35,9 @@ const submitBodySchema = z.object({
     )
     .min(1)
 });
+const submitQuerySchema = z.object({
+  demoClientId: z.string().min(1).optional()
+});
 
 const swapBodySchema = z.object({
   exerciseId: z.string().min(1)
@@ -43,6 +47,21 @@ const applySwapBodySchema = z.object({
   fromExerciseId: z.string().min(1),
   toExerciseId: z.string().min(1)
 });
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function toDemoUserId(demoClientId: string): string {
+  const hex = createHash("sha256").update(demoClientId).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function resolveEffectiveUserId(authUserId: string, demoClientId?: string): string {
+  if (!demoClientId) {
+    return authUserId;
+  }
+
+  return uuidPattern.test(demoClientId) ? demoClientId : toDemoUserId(demoClientId);
+}
 
 const bearerSecurity = [{ bearerAuth: [] }];
 
@@ -201,10 +220,12 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
       }
     },
     async (request) => {
+      const query = submitQuerySchema.parse(request.query);
+      const effectiveUserId = resolveEffectiveUserId(request.user.id, query.demoClientId);
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
       const body = submitBodySchema.parse(request.body);
 
-      return submitWorkoutResults(request.user.id, params.id, body.results);
+      return submitWorkoutResults(effectiveUserId, params.id, body.results);
     }
   );
 

@@ -1,6 +1,9 @@
 import { config } from "dotenv";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
-config();
+const currentDir = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(currentDir, "../../.env") });
 const envSchema = z.object({
     DATABASE_URL: z.string().url(),
     SUPABASE_URL: z.string().url(),

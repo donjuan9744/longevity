@@ -9,6 +9,7 @@ import {
 import { SessionStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
 import { applyProgressionUpdate } from "./progressionService.js";
+import { ensureUserProfile } from "./userProfileService.js";
 
 function toExerciseDefinition(exercise: {
   id: string;
@@ -34,10 +35,7 @@ export async function generateWorkoutSession(
   userId: string,
   date: string
 ): Promise<{ sessionId: string; exercises: SessionExercise[]; engineVersion: string }> {
-  const userProfile = await prisma.userProfile.findUnique({ where: { userId } });
-  if (!userProfile) {
-    throw new Error("User profile not found");
-  }
+  const userProfile = await ensureUserProfile(userId);
 
   const parsedDate = new Date(`${date}T00:00:00.000Z`);
 
@@ -50,7 +48,7 @@ export async function generateWorkoutSession(
   ]);
 
   const program = await prisma.userProgram.findUnique({ where: { userId } });
-  const goal = (userProfile.goal as TrainingGoal | null) ?? (program?.goal as TrainingGoal | null) ?? "balanced";
+  const goal = (userProfile?.goal as TrainingGoal | null | undefined) ?? (program?.goal as TrainingGoal | null) ?? "balanced";
 
   const readinessInput = readiness
     ? {

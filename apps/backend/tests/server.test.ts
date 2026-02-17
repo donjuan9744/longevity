@@ -13,6 +13,7 @@ const mockPrisma = vi.hoisted(() => ({
     findUnique: vi.fn(),
   },
   userProfile: {
+    upsert: vi.fn(),
     findUnique: vi.fn(),
   },
   userProgram: {
@@ -27,6 +28,7 @@ const mockPrisma = vi.hoisted(() => ({
     create: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn(),
+    deleteMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
   },
@@ -173,6 +175,7 @@ const weeklyExercisePool = [
 describe("backend routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPrisma.workoutSession.deleteMany.mockResolvedValue({ count: 0 });
   });
 
   it("generates a session", async () => {
@@ -356,6 +359,87 @@ describe("backend routes", () => {
     await app.close();
   });
 
+  it("generates a weekly plan for a fresh user without foreign key errors", async () => {
+    mockPrisma.userProfile.upsert.mockResolvedValue({ userId: "user-1", goal: "balanced" });
+    mockPrisma.userProfile.findUnique.mockResolvedValue(null);
+    mockPrisma.userProgram.findUnique.mockResolvedValue(null);
+    mockPrisma.progressionState.findUnique.mockResolvedValue(null);
+    mockPrisma.readinessEntry.findMany.mockResolvedValue([]);
+    mockPrisma.exercise.findMany.mockResolvedValue(weeklyExercisePool);
+    mockPrisma.weeklyPlanSeed.findUnique.mockResolvedValue(null);
+    mockPrisma.workoutSession.findMany.mockResolvedValue([]);
+    let createCount = 0;
+    mockPrisma.workoutSession.create.mockImplementation(async (args: { data: { sessionDate: Date } }) => {
+      createCount += 1;
+      return {
+        id: `00000000-0000-0000-0000-00000000041${createCount}`,
+        userId: "user-1",
+        sessionDate: args.data.sessionDate,
+        engineVersion: "v1",
+        snapshot: { exercises: [], engineVersion: "v1", notes: [] },
+        status: "PLANNED"
+      };
+    });
+
+    const app = await buildServer();
+    const response = await app.inject({
+      method: "GET",
+      url: "/plans/week?start=2026-02-16&strengthDays=3"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().days).toHaveLength(7);
+    expect(mockPrisma.userProfile.upsert).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      update: {},
+      create: { userId: "user-1" }
+    });
+    expect(mockPrisma.workoutSession.create).toHaveBeenCalled();
+    expect(mockPrisma.userProfile.upsert.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPrisma.workoutSession.create.mock.invocationCallOrder[0] as number
+    );
+
+    await app.close();
+  });
+
+  it("ensures user exists before writing weekly plan seed on refresh", async () => {
+    mockPrisma.userProfile.upsert.mockResolvedValue({ userId: "user-1", goal: "balanced" });
+    mockPrisma.userProfile.findUnique.mockResolvedValue(null);
+    mockPrisma.userProgram.findUnique.mockResolvedValue({ goal: "balanced", daysPerWeek: 4, active: true });
+    mockPrisma.progressionState.findUnique.mockResolvedValue({ strengthLevel: 3, volumeLevel: 3, fatigueScore: 0, deloadCount: 0 });
+    mockPrisma.readinessEntry.findMany.mockResolvedValue([]);
+    mockPrisma.exercise.findMany.mockResolvedValue(weeklyExercisePool);
+    mockPrisma.weeklyPlanSeed.upsert.mockResolvedValue({ id: "seed-1", userId: "user-1", weekStart: new Date(), seed: 12345 });
+    mockPrisma.workoutSession.findMany.mockResolvedValue([]);
+    let createCount = 0;
+    mockPrisma.workoutSession.create.mockImplementation(async (args: { data: { sessionDate: Date } }) => {
+      createCount += 1;
+      return {
+        id: `00000000-0000-0000-0000-00000000051${createCount}`,
+        userId: "user-1",
+        sessionDate: args.data.sessionDate,
+        engineVersion: "v1",
+        snapshot: { exercises: [], engineVersion: "v1", notes: [] },
+        status: "PLANNED"
+      };
+    });
+
+    const app = await buildServer();
+    const response = await app.inject({
+      method: "POST",
+      url: "/plans/week/refresh?weekStart=2026-02-16"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockPrisma.userProfile.upsert).toHaveBeenCalled();
+    expect(mockPrisma.weeklyPlanSeed.upsert).toHaveBeenCalled();
+    expect(mockPrisma.userProfile.upsert.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPrisma.weeklyPlanSeed.upsert.mock.invocationCallOrder[0] as number
+    );
+
+    await app.close();
+  });
+
   it("refreshes planned strength sessions for a week", async () => {
     mockPrisma.userProfile.findUnique.mockResolvedValue({ userId: "user-1", goal: "balanced" });
     mockPrisma.userProgram.findUnique.mockResolvedValue({ goal: "balanced", daysPerWeek: 4, active: true });
@@ -403,7 +487,7 @@ describe("backend routes", () => {
         isActive: true
       }
     ]);
-    mockPrisma.workoutSession.findMany.mockResolvedValue([
+    const sessions = [
       {
         id: "00000000-0000-0000-0000-000000000101",
         userId: "user-1",
@@ -460,18 +544,30 @@ describe("backend routes", () => {
         snapshot: { exercises: [], engineVersion: "v1", notes: ["old"] },
         status: "PLANNED"
       }
-    ]);
-    mockPrisma.workoutSession.update.mockImplementation(async (args: {
-      where: { id: string };
-      data: { engineVersion: string; snapshot: unknown; status: string };
-    }) => ({
-      id: args.where.id,
-      userId: "user-1",
-      sessionDate: new Date("2026-02-16T00:00:00.000Z"),
-      engineVersion: args.data.engineVersion,
-      snapshot: args.data.snapshot,
-      status: args.data.status
-    }));
+    ];
+    let createdCount = 0;
+    mockPrisma.workoutSession.findMany.mockImplementation(async () => sessions);
+    mockPrisma.workoutSession.deleteMany.mockImplementation(async (args: { where: { id: { in: string[] } } }) => {
+      const ids = new Set(args.where.id.in);
+      const retained = sessions.filter((session) => !ids.has(session.id));
+      sessions.length = 0;
+      sessions.push(...retained);
+      return { count: ids.size };
+    });
+    mockPrisma.workoutSession.create.mockImplementation(async (args: { data: { sessionDate: Date; engineVersion: string; snapshot: unknown; status: string } }) => {
+      createdCount += 1;
+      const suffix = String(900 + createdCount).padStart(12, "0");
+      const created = {
+        id: `00000000-0000-0000-0000-${suffix}`,
+        userId: "user-1",
+        sessionDate: args.data.sessionDate,
+        engineVersion: args.data.engineVersion,
+        snapshot: args.data.snapshot,
+        status: args.data.status
+      };
+      sessions.push(created);
+      return created;
+    });
 
     const app = await buildServer();
     const response = await app.inject({
@@ -481,8 +577,9 @@ describe("backend routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().days).toHaveLength(7);
-    expect(mockPrisma.workoutSession.update).toHaveBeenCalled();
-    expect(mockPrisma.workoutSession.create).not.toHaveBeenCalled();
+    expect(mockPrisma.workoutSession.deleteMany).toHaveBeenCalled();
+    expect(mockPrisma.workoutSession.create).toHaveBeenCalled();
+    expect(mockPrisma.workoutSession.update).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -600,6 +697,7 @@ describe("backend routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().days).toHaveLength(7);
+    expect(mockPrisma.workoutSession.deleteMany).not.toHaveBeenCalled();
     expect(mockPrisma.workoutSession.update).not.toHaveBeenCalled();
     expect(mockPrisma.workoutSession.create).not.toHaveBeenCalled();
     await app.close();
@@ -629,18 +727,26 @@ describe("backend routes", () => {
       updatedAt: new Date("2026-02-16T00:00:00.000Z")
     }));
     mockPrisma.workoutSession.findMany.mockImplementation(async () => sessions);
-    mockPrisma.workoutSession.update.mockImplementation(async (args: {
-      where: { id: string };
-      data: { engineVersion: string; snapshot: unknown; status: string };
-    }) => {
-      const session = sessions.find((entry) => entry.id === args.where.id);
-      if (!session) {
-        throw new Error("Session not found");
-      }
-      session.engineVersion = args.data.engineVersion;
-      session.snapshot = args.data.snapshot as { exercises: unknown[]; engineVersion: string; notes: string[] };
-      session.status = args.data.status;
-      return session;
+    let createdCount = 0;
+    mockPrisma.workoutSession.deleteMany.mockImplementation(async (args: { where: { id: { in: string[] } } }) => {
+      const ids = new Set(args.where.id.in);
+      const retained = sessions.filter((session) => !ids.has(session.id));
+      sessions.length = 0;
+      sessions.push(...retained);
+      return { count: ids.size };
+    });
+    mockPrisma.workoutSession.create.mockImplementation(async (args: { data: { sessionDate: Date; engineVersion: string; snapshot: unknown; status: string } }) => {
+      createdCount += 1;
+      const created = {
+        id: `00000000-0000-0000-0000-0000000005${createdCount}0`,
+        userId: "user-1",
+        sessionDate: args.data.sessionDate,
+        engineVersion: args.data.engineVersion,
+        snapshot: args.data.snapshot as { exercises: unknown[]; engineVersion: string; notes: string[] },
+        status: args.data.status
+      };
+      sessions.push(created);
+      return created;
     });
 
     const dateNowSpy = vi.spyOn(Date, "now");
@@ -719,18 +825,26 @@ describe("backend routes", () => {
           }
     );
     mockPrisma.workoutSession.findMany.mockImplementation(async () => sessions);
-    mockPrisma.workoutSession.update.mockImplementation(async (args: {
-      where: { id: string };
-      data: { engineVersion: string; snapshot: unknown; status: string };
-    }) => {
-      const session = sessions.find((entry) => entry.id === args.where.id);
-      if (!session) {
-        throw new Error("Session not found");
-      }
-      session.engineVersion = args.data.engineVersion;
-      session.snapshot = args.data.snapshot as { exercises: unknown[]; engineVersion: string; notes: string[] };
-      session.status = args.data.status;
-      return session;
+    let createdCount = 0;
+    mockPrisma.workoutSession.deleteMany.mockImplementation(async (args: { where: { id: { in: string[] } } }) => {
+      const ids = new Set(args.where.id.in);
+      const retained = sessions.filter((session) => !ids.has(session.id));
+      sessions.length = 0;
+      sessions.push(...retained);
+      return { count: ids.size };
+    });
+    mockPrisma.workoutSession.create.mockImplementation(async (args: { data: { sessionDate: Date; engineVersion: string; snapshot: unknown; status: string } }) => {
+      createdCount += 1;
+      const created = {
+        id: `00000000-0000-0000-0000-0000000006${createdCount}0`,
+        userId: "user-1",
+        sessionDate: args.data.sessionDate,
+        engineVersion: args.data.engineVersion,
+        snapshot: args.data.snapshot as { exercises: unknown[]; engineVersion: string; notes: string[] },
+        status: args.data.status
+      };
+      sessions.push(created);
+      return created;
     });
 
     vi.spyOn(Date, "now").mockReturnValue(1700000010000);

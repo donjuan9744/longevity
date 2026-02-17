@@ -2,6 +2,7 @@ import { generateSession } from "@longevity/engine";
 import { SessionStatus } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
 import { applyProgressionUpdate } from "./progressionService.js";
+import { ensureUserProfile } from "./userProfileService.js";
 function toExerciseDefinition(exercise) {
     return {
         id: exercise.id,
@@ -14,10 +15,7 @@ function toExerciseDefinition(exercise) {
     };
 }
 export async function generateWorkoutSession(userId, date) {
-    const userProfile = await prisma.userProfile.findUnique({ where: { userId } });
-    if (!userProfile) {
-        throw new Error("User profile not found");
-    }
+    const userProfile = await ensureUserProfile(userId);
     const parsedDate = new Date(`${date}T00:00:00.000Z`);
     const [readiness, progression, exercises] = await Promise.all([
         prisma.readinessEntry.findUnique({
@@ -27,7 +25,7 @@ export async function generateWorkoutSession(userId, date) {
         prisma.exercise.findMany({ where: { isActive: true }, orderBy: { id: "asc" } })
     ]);
     const program = await prisma.userProgram.findUnique({ where: { userId } });
-    const goal = userProfile.goal ?? program?.goal ?? "balanced";
+    const goal = userProfile?.goal ?? program?.goal ?? "balanced";
     const readinessInput = readiness
         ? {
             sleepHours: readiness.sleepHours,

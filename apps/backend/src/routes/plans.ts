@@ -1,9 +1,11 @@
 import { generateWeeklyPlan, type DayPlan, type GeneratedSession, type TrainingGoal } from "@longevity/engine";
 import { SessionStatus, type Prisma } from "@prisma/client";
 import type { FastifyPluginAsync } from "fastify";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
+import { ensureUserProfile } from "../services/userProfileService.js";
 
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const isoDatePatternString = "^\\d{4}-\\d{2}-\\d{2}$";
@@ -22,18 +24,34 @@ const validationErrorSchema = {
 
 const weekQuerySchema = z.object({
   start: z.string().regex(isoDatePattern).optional(),
-  strengthDays: z.number().int().min(2).max(5).optional()
+  strengthDays: z.number().int().min(2).max(5).optional(),
+  demoClientId: z.string().min(1).optional()
 });
 
 const weekRefreshQuerySchema = z.object({
   weekStart: z.string().regex(isoDatePattern).optional(),
-  start: z.string().regex(isoDatePattern).optional()
+  start: z.string().regex(isoDatePattern).optional(),
+  demoClientId: z.string().min(1).optional()
 });
 const weekCancelQuerySchema = z.object({
   weekStart: z.string().regex(isoDatePattern)
 });
 
 type StrengthDays = 2 | 3 | 4 | 5;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function toDemoUserId(demoClientId: string): string {
+  const hex = createHash("sha256").update(demoClientId).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function resolveEffectiveUserId(authUserId: string, demoClientId?: string): string {
+  if (!demoClientId) {
+    return authUserId;
+  }
+
+  return uuidPattern.test(demoClientId) ? demoClientId : toDemoUserId(demoClientId);
+}
 
 type WeekPlanResponse = {
   weekStart: string;
@@ -328,52 +346,53 @@ async function buildWeeklyPlanForUser(params: {
   refreshPlannedStrengthSessions: boolean;
   seedOverride?: number;
 }): Promise<WeekPlanResponse> {
+  await ensureUserProfile(params.userId);
+
   const { start, end } = getWeekRange(params.startIso);
   const weekStart = formatIsoDate(start);
   const weekEnd = formatIsoDate(addDays(end, -1));
   const weekStartDate = parseIsoDate(weekStart);
   const readinessTrendStart = addDays(start, -14);
 
-  const [userProfile, program, progression, readinessEntries, exercises, existingSessions, persistedPlanSeed] = await Promise.all([
-    prisma.userProfile.findUnique({ where: { userId: params.userId } }),
-    prisma.userProgram.findUnique({ where: { userId: params.userId } }),
-    prisma.progressionState.findUnique({ where: { userId: params.userId } }),
-    prisma.readinessEntry.findMany({
-      where: {
-        userId: params.userId,
-        date: {
-          gte: readinessTrendStart,
-          lt: start
-        }
+  const userProfile = await prisma.userProfile.findUnique({ where: { userId: params.userId } });
+  const program = await prisma.userProgram.findUnique({ where: { userId: params.userId } });
+  const progression = await prisma.progressionState.findUnique({ where: { userId: params.userId } });
+  const readinessEntries = await prisma.readinessEntry.findMany({
+    where: {
+      userId: params.userId,
+      date: {
+        gte: readinessTrendStart,
+        lt: start
+      }
+    },
+    orderBy: { date: "desc" },
+    take: 7
+  });
+  const exercises = await prisma.exercise.findMany({ where: { isActive: true }, orderBy: { id: "asc" } });
+  const existingSessions = await prisma.workoutSession.findMany({
+    where: {
+      userId: params.userId,
+      sessionDate: {
+        gte: start,
+        lt: end
       },
-      orderBy: { date: "desc" },
-      take: 7
-    }),
-    prisma.exercise.findMany({ where: { isActive: true }, orderBy: { id: "asc" } }),
-    prisma.workoutSession.findMany({
-      where: {
-        userId: params.userId,
-        sessionDate: {
-          gte: start,
-          lt: end
-        },
-        status: {
-          not: SessionStatus.CANCELLED
-        }
-      },
-      orderBy: [{ sessionDate: "asc" }, { createdAt: "asc" }]
-    }),
+      status: {
+        not: SessionStatus.CANCELLED
+      }
+    },
+    orderBy: [{ sessionDate: "asc" }, { createdAt: "asc" }]
+  });
+  const persistedPlanSeed =
     typeof params.seedOverride === "number"
-      ? Promise.resolve(null)
-      : prisma.weeklyPlanSeed.findUnique({
+      ? null
+      : await prisma.weeklyPlanSeed.findUnique({
           where: {
             userId_weekStart: {
               userId: params.userId,
               weekStart: weekStartDate
             }
           }
-        })
-  ]);
+        });
 
   const strengthDays = resolveStrengthDays(params.strengthDaysOverride ?? program?.daysPerWeek);
   const goal = resolveGoal(userProfile?.goal ?? program?.goal);
@@ -407,16 +426,92 @@ async function buildWeeklyPlanForUser(params: {
   });
 
   const sessionByDate = new Map<string, (typeof existingSessions)[number]>();
+  const sessionsByDate = new Map<string, (typeof existingSessions)>();
+  const setPrimarySessionByDate = () => {
+    sessionByDate.clear();
+    sessionsByDate.forEach((sessions, sessionDate) => {
+      const primary = sessions[0];
+      if (primary) {
+        sessionByDate.set(sessionDate, primary);
+      }
+    });
+  };
+
   existingSessions.forEach((session) => {
     const sessionDate = formatIsoDate(session.sessionDate);
-    if (!sessionByDate.has(sessionDate)) {
-      sessionByDate.set(sessionDate, session);
+    const sessionsForDate = sessionsByDate.get(sessionDate);
+    if (sessionsForDate) {
+      sessionsForDate.push(session);
+      return;
     }
+
+    sessionsByDate.set(sessionDate, [session]);
   });
+  setPrimarySessionByDate();
 
   const strengthDaysInWeek = generated.days.filter(
     (day): day is Extract<DayPlan, { type: "strength" }> => day.type === "strength"
   );
+
+  if (params.refreshPlannedStrengthSessions) {
+    const strengthDates = new Set(strengthDaysInWeek.map((day) => day.date));
+    const plannedStrengthSessions = existingSessions.filter((session) => {
+      const sessionDate = formatIsoDate(session.sessionDate);
+      return strengthDates.has(sessionDate) && session.status === SessionStatus.PLANNED;
+    });
+
+    if (plannedStrengthSessions.length > 0) {
+      const plannedStrengthSessionIds = plannedStrengthSessions.map((session) => session.id);
+      const plannedStrengthSessionIdSet = new Set(plannedStrengthSessionIds);
+      const regeneratedStrengthDates = new Set(plannedStrengthSessions.map((session) => formatIsoDate(session.sessionDate)));
+
+      await prisma.workoutSession.deleteMany({
+        where: {
+          id: {
+            in: plannedStrengthSessionIds
+          }
+        }
+      });
+
+      sessionsByDate.forEach((sessions, sessionDate) => {
+        const filteredSessions = sessions.filter((session) => !plannedStrengthSessionIdSet.has(session.id));
+        if (filteredSessions.length > 0) {
+          sessionsByDate.set(sessionDate, filteredSessions);
+          return;
+        }
+
+        sessionsByDate.delete(sessionDate);
+      });
+      setPrimarySessionByDate();
+
+      const regeneratedStrengthDays = strengthDaysInWeek.filter((day) => regeneratedStrengthDates.has(day.date));
+      const createdSessions = await Promise.all(
+        regeneratedStrengthDays.map((day) =>
+          prisma.workoutSession.create({
+            data: {
+              userId: params.userId,
+              sessionDate: parseIsoDate(day.date),
+              engineVersion: day.session.engineVersion,
+              snapshot: day.session as unknown as Prisma.InputJsonValue,
+              status: SessionStatus.PLANNED
+            }
+          })
+        )
+      );
+
+      createdSessions.forEach((session) => {
+        const sessionDate = formatIsoDate(session.sessionDate);
+        const sessionsForDate = sessionsByDate.get(sessionDate);
+        if (sessionsForDate) {
+          sessionsForDate.push(session);
+          return;
+        }
+
+        sessionsByDate.set(sessionDate, [session]);
+      });
+      setPrimarySessionByDate();
+    }
+  }
 
   const missingStrengthDays = strengthDaysInWeek.filter((day) => !sessionByDate.has(day.date));
   if (missingStrengthDays.length > 0) {
@@ -435,39 +530,16 @@ async function buildWeeklyPlanForUser(params: {
     );
 
     createdSessions.forEach((session) => {
-      sessionByDate.set(formatIsoDate(session.sessionDate), session);
+      const sessionDate = formatIsoDate(session.sessionDate);
+      const sessionsForDate = sessionsByDate.get(sessionDate);
+      if (sessionsForDate) {
+        sessionsForDate.push(session);
+        return;
+      }
+
+      sessionsByDate.set(sessionDate, [session]);
     });
-  }
-
-  if (params.refreshPlannedStrengthSessions) {
-    const refreshableStrengthDays = strengthDaysInWeek.filter((day) => {
-      const session = sessionByDate.get(day.date);
-      return session?.status === SessionStatus.PLANNED;
-    });
-
-    if (refreshableStrengthDays.length > 0) {
-      const refreshedSessions = await Promise.all(
-        refreshableStrengthDays.map(async (day) => {
-          const session = sessionByDate.get(day.date);
-          if (!session) {
-            throw new Error(`Missing persisted session for strength day ${day.date}`);
-          }
-
-          return prisma.workoutSession.update({
-            where: { id: session.id },
-            data: {
-              engineVersion: day.session.engineVersion,
-              snapshot: day.session as unknown as Prisma.InputJsonValue,
-              status: SessionStatus.PLANNED
-            }
-          });
-        })
-      );
-
-      refreshedSessions.forEach((session) => {
-        sessionByDate.set(formatIsoDate(session.sessionDate), session);
-      });
-    }
+    setPrimarySessionByDate();
   }
 
   const days = generated.days.map((day) => {
@@ -537,6 +609,11 @@ export const plansRoutes: FastifyPluginAsync = async (app) => {
               minimum: 2,
               maximum: 5,
               description: "Optional strength training days for this generated week."
+            },
+            demoClientId: {
+              type: "string",
+              minLength: 1,
+              description: "Optional demo coach client identifier for isolated plan generation."
             }
           }
         },
@@ -548,8 +625,9 @@ export const plansRoutes: FastifyPluginAsync = async (app) => {
     },
     async (request) => {
       const query = weekQuerySchema.parse(request.query);
+      const effectiveUserId = resolveEffectiveUserId(request.user.id, query.demoClientId);
       return buildWeeklyPlanForUser({
-        userId: request.user.id,
+        userId: effectiveUserId,
         ...(query.start ? { startIso: query.start } : {}),
         ...(typeof query.strengthDays === "number" ? { strengthDaysOverride: query.strengthDays } : {}),
         refreshPlannedStrengthSessions: false
@@ -573,6 +651,11 @@ export const plansRoutes: FastifyPluginAsync = async (app) => {
               type: "string",
               pattern: isoDatePatternString,
               description: "Optional week start hint (YYYY-MM-DD). The endpoint normalizes to Monday UTC."
+            },
+            demoClientId: {
+              type: "string",
+              minLength: 1,
+              description: "Optional demo coach client identifier for isolated plan generation."
             }
           }
         },
@@ -584,21 +667,23 @@ export const plansRoutes: FastifyPluginAsync = async (app) => {
     },
     async (request) => {
       const query = weekRefreshQuerySchema.parse(request.query);
+      const effectiveUserId = resolveEffectiveUserId(request.user.id, query.demoClientId);
       const startIso = query.weekStart ?? query.start;
       const { start } = getWeekRange(startIso);
       const normalizedWeekStart = formatIsoDate(start);
       const normalizedWeekStartDate = parseIsoDate(normalizedWeekStart);
-      const weekSeed = createWeekRefreshSeed(request.user.id, normalizedWeekStart);
+      const weekSeed = createWeekRefreshSeed(effectiveUserId, normalizedWeekStart);
 
+      await ensureUserProfile(effectiveUserId);
       await prisma.weeklyPlanSeed.upsert({
         where: {
           userId_weekStart: {
-            userId: request.user.id,
+            userId: effectiveUserId,
             weekStart: normalizedWeekStartDate
           }
         },
         create: {
-          userId: request.user.id,
+          userId: effectiveUserId,
           weekStart: normalizedWeekStartDate,
           seed: weekSeed
         },
@@ -608,7 +693,7 @@ export const plansRoutes: FastifyPluginAsync = async (app) => {
       });
 
       return buildWeeklyPlanForUser({
-        userId: request.user.id,
+        userId: effectiveUserId,
         startIso: normalizedWeekStart,
         refreshPlannedStrengthSessions: true,
         seedOverride: weekSeed
