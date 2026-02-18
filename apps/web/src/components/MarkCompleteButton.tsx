@@ -14,11 +14,25 @@ type Props = {
   onCompleted:
     | ((payload: { date: string; type: 'strength' | 'mobility' | 'zone2' | 'recovery'; local: boolean }) => Promise<void> | void)
     | undefined;
+  buttonLabel?: string;
+  buttonClassName?: string;
 };
 
-export default function MarkCompleteButton({ scope, weekStart, date, type, sessionId, exercises = [], status, onCompleted }: Props) {
+export default function MarkCompleteButton({
+  scope,
+  weekStart,
+  date,
+  type,
+  sessionId,
+  exercises = [],
+  status,
+  onCompleted,
+  buttonLabel,
+  buttonClassName
+}: Props) {
   const [isCompleting, setIsCompleting] = useState(false);
   const [error, setError] = useState('');
+  const [justCompleted, setJustCompleted] = useState(false);
   const supportsLocalCompletion = type !== 'strength';
   const completionInput = useMemo(
     () => ({
@@ -36,6 +50,7 @@ export default function MarkCompleteButton({ scope, weekStart, date, type, sessi
 
   useEffect(() => {
     setIsLocallyComplete(isLocallyCompleted(completionInput));
+    setJustCompleted(false);
   }, [completionInput]);
 
   const isStrength = type === 'strength';
@@ -43,7 +58,7 @@ export default function MarkCompleteButton({ scope, weekStart, date, type, sessi
   const canAttemptCompletion = supportsLocalCompletion || (isStrength && hasSessionId);
   const isServerComplete = isStrength && status === 'COMPLETED';
   const isComplete = isServerComplete || isLocallyComplete;
-  const statusLabel = useMemo(() => (isComplete ? 'COMPLETED' : 'PLANNED'), [isComplete]);
+  const statusLabel = useMemo(() => (isComplete ? 'Completed' : 'Pending'), [isComplete]);
 
   const exerciseResults: SessionResultInput[] = useMemo(
     () =>
@@ -64,6 +79,7 @@ export default function MarkCompleteButton({ scope, weekStart, date, type, sessi
       markLocallyCompleted(completionInput);
       setIsLocallyComplete(true);
       setError('');
+      setJustCompleted(true);
       await onCompleted?.({ date, type, local: true });
       return;
     }
@@ -81,6 +97,8 @@ export default function MarkCompleteButton({ scope, weekStart, date, type, sessi
           ? (window.localStorage.getItem('longevity:coachDemo:selectedClient:v1') ?? undefined)
           : undefined;
       await completeSession(sessionId, exerciseResults, demoClientId);
+      setIsLocallyComplete(true);
+      setJustCompleted(true);
       await onCompleted?.({ date, type, local: false });
     } catch (err) {
       if (err instanceof Error && err.message) {
@@ -99,13 +117,14 @@ export default function MarkCompleteButton({ scope, weekStart, date, type, sessi
         Status: <span className={isComplete ? 'status-complete' : 'status-planned'}>{statusLabel}</span>
       </p>
       <button
-        className="btn btn-primary-action"
+        className={`btn btn-primary-action${buttonClassName ? ` ${buttonClassName}` : ''}`}
         onClick={() => void handleComplete()}
         disabled={isCompleting || isComplete || !canAttemptCompletion}
       >
-        {isComplete ? 'Completed' : isCompleting ? 'Completing...' : 'Mark Complete'}
+        {isComplete ? 'Completed ✓' : isCompleting ? 'Completing...' : (buttonLabel ?? 'Mark Complete')}
       </button>
-      {!isStrength && isLocallyComplete ? <p className="helper-text">Completed locally</p> : null}
+      {justCompleted ? <p className="helper-text">Saved. Session marked complete.</p> : null}
+      {!justCompleted && !isStrength && isLocallyComplete ? <p className="helper-text">Completed locally</p> : null}
       {error ? <p className="inline-error">{error}</p> : null}
     </div>
   );

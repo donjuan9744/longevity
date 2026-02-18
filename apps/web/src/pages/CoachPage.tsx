@@ -3,7 +3,6 @@ import { getWeek, refreshWeek } from '../api/plans';
 import { upsertReadiness } from '../api/readiness';
 import { cancelSession } from '../api/sessions';
 import Card from '../components/Card';
-import SectionTitle from '../components/SectionTitle';
 import TodayPage from './TodayPage';
 import WeekPage from './WeekPage';
 import type { WeekResponse } from '../types/api';
@@ -12,6 +11,13 @@ import { getMondayIso } from '../utils/dates';
 type ViewMode = 'today' | 'week';
 type StrengthDays = 2 | 3 | 4 | 5;
 type CompletionPayload = { date: string; type: 'strength' | 'mobility' | 'zone2' | 'recovery'; local: boolean };
+type SwapPayload = {
+  date: string;
+  sessionId: string;
+  fromExerciseId: string;
+  toExerciseId: string;
+  toExerciseName: string;
+};
 
 type DemoClient = {
   id: string;
@@ -25,6 +31,10 @@ type ClientSettings = {
   soreness: number;
   stress: number;
   strengthDays: StrengthDays;
+};
+
+type Props = {
+  view: ViewMode;
 };
 
 const DEMO_CLIENTS: DemoClient[] = [
@@ -91,11 +101,11 @@ function loadClientSettings(): Record<string, ClientSettings> {
 
 function aiExplanation(settings: ClientSettings): string {
   if (settings.sleepHours <= 5 && settings.soreness >= 4) {
-    return 'Reduced volume due to low sleep and high soreness. Prioritizing recovery quality this week.';
+    return 'Reduced volume due to low sleep and high soreness.';
   }
 
   if (settings.energy <= 2 || settings.stress >= 4) {
-    return 'Kept intensity conservative and spread stress more evenly across the week.';
+    return 'Kept intensity conservative and spread stress more evenly this week.';
   }
 
   if (settings.sleepHours >= 8 && settings.energy >= 4 && settings.soreness <= 2) {
@@ -109,12 +119,35 @@ function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function CoachPage() {
-  const [view, setView] = useState<ViewMode>('today');
+function readinessLabel(settings: ClientSettings): 'Low' | 'Moderate' | 'High' {
+  if (settings.sleepHours <= 5 || settings.energy <= 2 || settings.stress >= 4 || settings.soreness >= 4) {
+    return 'Low';
+  }
+
+  if (settings.sleepHours <= 6 || settings.energy === 3 || settings.stress === 3 || settings.soreness === 3) {
+    return 'Moderate';
+  }
+
+  return 'High';
+}
+
+function fatigueLevel(settings: ClientSettings): 'on-track' | 'moderate' | 'high' {
+  const readiness = readinessLabel(settings);
+  if (readiness === 'Low' && (settings.stress >= 4 || settings.soreness >= 4)) {
+    return 'high';
+  }
+
+  if (readiness !== 'High') {
+    return 'moderate';
+  }
+
+  return 'on-track';
+}
+
+export default function CoachPage({ view }: Props) {
   const [selectedClientId, setSelectedClientId] = useState<string>(() => loadSelectedClientId());
   const [settingsByClient, setSettingsByClient] = useState<Record<string, ClientSettings>>(() => loadClientSettings());
   const [weekByClient, setWeekByClient] = useState<Record<string, WeekResponse | undefined>>({});
-  const [explanation, setExplanation] = useState<string>('Select a client and regenerate to see coaching rationale.');
   const [loading, setLoading] = useState<boolean>(true);
   const [applying, setApplying] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -122,6 +155,8 @@ export default function CoachPage() {
   const [checkInText, setCheckInText] = useState<string>('');
   const [manualOverride, setManualOverride] = useState<boolean>(false);
   const [showInterpretedLabel, setShowInterpretedLabel] = useState<boolean>(false);
+  const [clientDrawerOpen, setClientDrawerOpen] = useState<boolean>(false);
+  const [mobileInsightsOpen, setMobileInsightsOpen] = useState<boolean>(false);
 
   const selectedClient = useMemo(
     () => DEMO_CLIENTS.find((client) => client.id === selectedClientId) ?? DEMO_CLIENTS[0]!,
@@ -129,30 +164,48 @@ export default function CoachPage() {
   );
   const selectedSettings = settingsByClient[selectedClient.id] ?? defaultClientSettings();
   const selectedWeek = weekByClient[selectedClient.id];
-  const hasReadinessValues =
-    Number.isFinite(selectedSettings.sleepHours) &&
-    Number.isFinite(selectedSettings.energy) &&
-    Number.isFinite(selectedSettings.stress) &&
-    Number.isFinite(selectedSettings.soreness);
-  const expectedImpactItems: string[] = [];
+  const coachNote = selectedWeek ? aiExplanation(selectedSettings) : 'Generate the week to see coaching rationale.';
 
-  if (selectedSettings.sleepHours <= 5 || selectedSettings.stress >= 4) {
-    expectedImpactItems.push('Training volume will be reduced.');
-  }
-  if (selectedSettings.soreness >= 4) {
-    expectedImpactItems.push('Recovery emphasis will be added.');
-  }
-  if (selectedSettings.energy <= 2) {
-    expectedImpactItems.push('Intensity will be slightly reduced.');
-  }
-  if (
-    selectedSettings.sleepHours >= 7 &&
-    selectedSettings.energy >= 3 &&
-    selectedSettings.stress <= 2 &&
-    selectedSettings.soreness <= 2
-  ) {
-    expectedImpactItems.push('Full training load maintained.');
-  }
+  const impactChips = useMemo(() => {
+    const chips: string[] = [];
+    if (selectedSettings.sleepHours <= 5 || selectedSettings.stress >= 4) {
+      chips.push('Volume ↓');
+    }
+    if (selectedSettings.energy <= 2) {
+      chips.push('Intensity ↓');
+    }
+    if (selectedSettings.soreness >= 4) {
+      chips.push('Mobility +');
+    }
+    if (
+      selectedSettings.sleepHours >= 7 &&
+      selectedSettings.energy >= 3 &&
+      selectedSettings.stress <= 2 &&
+      selectedSettings.soreness <= 2
+    ) {
+      chips.push('Load ↔');
+    }
+
+    return chips.length > 0 ? chips : ['No change'];
+  }, [selectedSettings]);
+
+  const insightItems = useMemo(() => {
+    const items: string[] = [];
+    if (selectedSettings.sleepHours <= 5) {
+      items.push('Lower sleep is driving a recovery-biased week.');
+    }
+    if (selectedSettings.stress >= 4) {
+      items.push('Stress remains high; intensity is distributed more conservatively.');
+    }
+    if (selectedSettings.soreness >= 4) {
+      items.push('Soreness trend supports additional mobility and lighter loading.');
+    }
+    if (items.length === 0) {
+      items.push('Readiness trend is stable for planned progression this week.');
+    }
+
+    return items.slice(0, 3);
+  }, [selectedSettings]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -250,7 +303,6 @@ export default function CoachPage() {
 
       const refreshed = await refreshWeek(baseWeekStart, selectedSettings.strengthDays, selectedClient.id);
       setWeekByClient((prev) => ({ ...prev, [selectedClient.id]: refreshed }));
-      setExplanation(aiExplanation(selectedSettings));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to regenerate week.';
       setError(message);
@@ -262,7 +314,7 @@ export default function CoachPage() {
   async function handleCancel(sessionId: string): Promise<void> {
     setError('');
     try {
-      await cancelSession(sessionId);
+      await cancelSession(sessionId, selectedClient.id);
       await loadWeekForClient(selectedClient.id, selectedSettings.strengthDays);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to cancel workout.';
@@ -301,195 +353,258 @@ export default function CoachPage() {
     await loadWeekForClient(selectedClient.id, selectedSettings.strengthDays);
   }
 
+  function handleSwapApplied(payload: SwapPayload): void {
+    setWeekByClient((prev) => {
+      const current = prev[selectedClient.id];
+      if (!current) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [selectedClient.id]: {
+          ...current,
+          days: current.days.map((day) => {
+            if (day.type !== 'strength' || day.date !== payload.date || day.sessionId !== payload.sessionId) {
+              return day;
+            }
+
+            return {
+              ...day,
+              session: {
+                ...day.session,
+                exercises: day.session.exercises.map((exercise) =>
+                  exercise.exerciseId === payload.fromExerciseId
+                    ? { ...exercise, exerciseId: payload.toExerciseId, name: payload.toExerciseName }
+                    : exercise
+                )
+              }
+            };
+          })
+        }
+      };
+    });
+  }
+
   return (
     <>
-      <SectionTitle title="Coach Demo Mode" subtitle="Client management and week planning" />
+      <div className="coach-dashboard">
+        <button className="btn btn-ghost coach-client-trigger" type="button" onClick={() => setClientDrawerOpen(true)}>
+          Clients: {selectedClient.name}
+        </button>
 
-      <Card>
-        <div className="coach-grid">
-          <label className="coach-field">
-            <span>Client</span>
-            <select
-              value={selectedClient.id}
-              onChange={(event) => {
-                setSelectedClientId(event.target.value);
-                setExplanation('Select a client and regenerate to see coaching rationale.');
-              }}
-            >
-              {DEMO_CLIENTS.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name} ({client.age})
-                </option>
-              ))}
-            </select>
-          </label>
+        {clientDrawerOpen ? <button className="coach-drawer-backdrop" onClick={() => setClientDrawerOpen(false)} aria-label="Close clients drawer" /> : null}
 
-          <label className="coach-field">
-            <span>Strength days</span>
-            <select
-              value={selectedSettings.strengthDays}
-              onChange={(event) => {
-                patchSelectedClientSettings({
-                  strengthDays: Number(event.target.value) as StrengthDays
-                });
-              }}
-            >
-              {[2, 3, 4, 5].map((days) => (
-                <option key={days} value={days}>
-                  {days}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <aside className={`coach-sidebar${clientDrawerOpen ? ' coach-sidebar-open' : ''}`}>
+          <div className="coach-sidebar-head">
+            <h3 className="coach-sidebar-title">Clients</h3>
+          </div>
 
-        <div className="coach-grid">
-          <label className="coach-field">
-            <span>Client Check-in (natural language)</span>
-            <textarea
-              value={checkInText}
-              onChange={(event) => setCheckInText(event.target.value)}
-              placeholder="e.g. Slept 5 hours. High stress. Legs sore. Low motivation."
-              rows={3}
-            />
-          </label>
-          <label className="coach-field">
-            <span>&nbsp;</span>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button className="btn btn-ghost" type="button" onClick={handleInterpretCheckIn}>
-                Interpret Check-in
+          <ul className="coach-client-list">
+            {DEMO_CLIENTS.map((client) => {
+              const clientSettings = settingsByClient[client.id] ?? defaultClientSettings();
+              const clientWeek = weekByClient[client.id];
+              const completed = clientWeek ? clientWeek.days.filter((day) => day.status === 'COMPLETED').length : 0;
+              const total = clientWeek ? clientWeek.days.length : 5;
+              const readiness = readinessLabel(clientSettings);
+              const fatigue = fatigueLevel(clientSettings);
+
+              return (
+                <li key={client.id}>
+                  <button
+                    type="button"
+                    className={`coach-client-item${selectedClient.id === client.id ? ' coach-client-item-active' : ''}`}
+                    onClick={() => {
+                      setSelectedClientId(client.id);
+                      setClientDrawerOpen(false);
+                    }}
+                  >
+                    <span className={`coach-status-dot coach-status-${fatigue}`} aria-hidden="true" />
+                    <span className="coach-client-copy">
+                      <strong>{client.name}</strong>
+                      <span className="muted">
+                        {completed}/{total} complete • Readiness: {readiness}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
+
+        <section className="coach-main">
+          {loading ? (
+            <Card>
+              <p className="loading">Loading week...</p>
+            </Card>
+          ) : null}
+
+          {!loading && error ? (
+            <Card>
+              <h3 className="card-title">Coach Mode Error</h3>
+              <p className="error-detail">{error}</p>
+            </Card>
+          ) : null}
+
+          {!loading && !error && selectedWeek
+            ? view === 'today'
+              ? (
+                <TodayPage
+                  week={selectedWeek}
+                  completionScope={selectedClient.id}
+                  onCancel={(sessionId) => void handleCancel(sessionId)}
+                  onSwapApplied={(payload) => handleSwapApplied(payload)}
+                  onCompleted={(payload) => handleCompleted(payload)}
+                  hideSectionTitle
+                />
+              )
+              : (
+                <WeekPage
+                  week={selectedWeek}
+                  completionScope={selectedClient.id}
+                  compactWeekGrid
+                  onSwapApplied={(payload) => handleSwapApplied(payload)}
+                  onCompleted={(payload) => handleCompleted(payload)}
+                  hideSectionTitle
+                />
+              )
+            : null}
+        </section>
+
+        <aside className="coach-rail">
+          <Card className="coach-rail-card">
+            <header className="coach-section-header">
+              <h3 className="coach-section-title">Structure</h3>
+            </header>
+            <label className="coach-field">
+              <span>Strength Days</span>
+              <select
+                value={selectedSettings.strengthDays}
+                onChange={(event) => {
+                  patchSelectedClientSettings({ strengthDays: Number(event.target.value) as StrengthDays });
+                }}
+              >
+                {[2, 3, 4, 5].map((days) => (
+                  <option key={days} value={days}>
+                    {days}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </Card>
+
+          <Card className="coach-rail-card">
+            <header className="coach-section-header">
+              <h3 className="coach-section-title">Readiness Input</h3>
+            </header>
+
+            <label className="coach-field">
+              <span>Client Check-In</span>
+              <textarea
+                value={checkInText}
+                onChange={(event) => setCheckInText(event.target.value)}
+                placeholder="e.g. Slept 5 hours. High stress. Legs sore."
+                rows={3}
+              />
+            </label>
+
+            <div className="coach-button-row coach-button-row-compact">
+              <button className="btn btn-soft-primary" type="button" onClick={handleInterpretCheckIn}>
+                Interpret
               </button>
               <button className="btn btn-ghost" type="button" onClick={() => setManualOverride((current) => !current)}>
-                Manual override
+                Manual Override
               </button>
             </div>
-          </label>
-        </div>
 
-        {manualOverride ? (
-          <>
-            {showInterpretedLabel ? <p className="muted">Interpreted readiness (editable)</p> : null}
-            <div className="coach-grid">
-              <label className="coach-field">
-                <span>Sleep (hours)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  value={selectedSettings.sleepHours}
-                  onChange={(event) => patchSelectedClientSettings({ sleepHours: Number(event.target.value) })}
-                />
-              </label>
+            {manualOverride ? (
+              <div className="coach-manual-block">
+                {showInterpretedLabel ? <p className="muted coach-inline-label">Interpreted readiness (editable)</p> : null}
+                <div className="coach-grid coach-grid-compact">
+                  <label className="coach-field">
+                    <span>Sleep</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={selectedSettings.sleepHours}
+                      onChange={(event) => patchSelectedClientSettings({ sleepHours: Number(event.target.value) })}
+                    />
+                  </label>
 
-              <label className="coach-field">
-                <span>Energy (1-5)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={selectedSettings.energy}
-                  onChange={(event) => patchSelectedClientSettings({ energy: Number(event.target.value) })}
-                />
-              </label>
+                  <label className="coach-field">
+                    <span>Energy</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={selectedSettings.energy}
+                      onChange={(event) => patchSelectedClientSettings({ energy: Number(event.target.value) })}
+                    />
+                  </label>
 
-              <label className="coach-field">
-                <span>Soreness (1-5)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={selectedSettings.soreness}
-                  onChange={(event) => patchSelectedClientSettings({ soreness: Number(event.target.value) })}
-                />
-              </label>
+                  <label className="coach-field">
+                    <span>Soreness</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={selectedSettings.soreness}
+                      onChange={(event) => patchSelectedClientSettings({ soreness: Number(event.target.value) })}
+                    />
+                  </label>
 
-              <label className="coach-field">
-                <span>Stress (1-5)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={selectedSettings.stress}
-                  onChange={(event) => patchSelectedClientSettings({ stress: Number(event.target.value) })}
-                />
-              </label>
+                  <label className="coach-field">
+                    <span>Stress</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={selectedSettings.stress}
+                      onChange={(event) => patchSelectedClientSettings({ stress: Number(event.target.value) })}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            <button className="btn coach-apply-btn" disabled={applying} onClick={() => void handleApplyAndRegenerate()}>
+              {applying ? 'Applying…' : 'Apply & Regenerate Week'}
+            </button>
+          </Card>
+
+          <Card className="coach-rail-card">
+            <header className="coach-section-header">
+              <h3 className="coach-section-title">Impact Summary</h3>
+            </header>
+            <div className="coach-impact-chips">
+              {impactChips.map((chip) => (
+                <span key={chip} className="coach-impact-chip">
+                  {chip}
+                </span>
+              ))}
             </div>
-          </>
-        ) : null}
+          </Card>
 
-        {hasReadinessValues ? (
-          <div
-            style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '10px',
-              padding: '12px 14px',
-              marginBottom: '12px'
-            }}
-          >
-            <h3 className="card-title" style={{ marginBottom: '6px' }}>
-              Expected Program Impact
-            </h3>
-            {expectedImpactItems.length > 0 ? (
-              <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                {expectedImpactItems.map((item) => (
+          <section className={`coach-insights-wrap${mobileInsightsOpen ? ' coach-insights-open' : ''}`}>
+            <button className="coach-insights-toggle" onClick={() => setMobileInsightsOpen((prev) => !prev)} type="button">
+              Insights
+            </button>
+            <Card className="coach-rail-card coach-insights-card">
+              <header className="coach-section-header">
+                <h3 className="coach-section-title">Insights</h3>
+              </header>
+              <ul className="coach-insights-list">
+                {insightItems.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-            ) : null}
-          </div>
-        ) : null}
-
-        <button className="btn" disabled={applying} onClick={() => void handleApplyAndRegenerate()}>
-          {applying ? 'Applying…' : 'Apply & Regenerate Week'}
-        </button>
-      </Card>
-
-      <Card>
-        <h3 className="card-title">AI Coach Note</h3>
-        <p className="notes">{explanation}</p>
-      </Card>
-
-      <section className="actions">
-        <button className="btn btn-ghost" onClick={() => setView('today')}>
-          Today View
-        </button>
-        <button className="btn btn-ghost" onClick={() => setView('week')}>
-          Week View
-        </button>
-      </section>
-
-      {loading ? (
-        <Card>
-          <p className="loading">Loading week...</p>
-        </Card>
-      ) : null}
-
-      {!loading && error ? (
-        <Card>
-          <h3 className="card-title">Coach Mode Error</h3>
-          <p className="error-detail">{error}</p>
-        </Card>
-      ) : null}
-
-      {!loading && !error && selectedWeek
-        ? view === 'today'
-          ? (
-            <TodayPage
-              week={selectedWeek}
-              completionScope={selectedClient.id}
-              onCancel={(sessionId) => void handleCancel(sessionId)}
-              onCompleted={(payload) => handleCompleted(payload)}
-            />
-          )
-          : (
-            <WeekPage
-              week={selectedWeek}
-              completionScope={selectedClient.id}
-              onCompleted={(payload) => handleCompleted(payload)}
-            />
-          )
-        : null}
+              <p className="coach-note muted">{coachNote}</p>
+            </Card>
+          </section>
+        </aside>
+      </div>
     </>
   );
 }

@@ -1,13 +1,25 @@
 import { apiFetch } from './client';
+import type { SessionExercise } from '../types/api';
 
-export async function cancelSession(sessionId: string): Promise<void> {
+function buildDemoClientQuery(demoClientId?: string): string {
+  if (!demoClientId) {
+    return '';
+  }
+
+  const params = new URLSearchParams({ demoClientId });
+  return `?${params.toString()}`;
+}
+
+export async function cancelSession(sessionId: string, demoClientId?: string): Promise<void> {
+  const query = buildDemoClientQuery(demoClientId);
+
   try {
-    await apiFetch<{ status: string }>(`/sessions/${sessionId}/cancel`, {
+    await apiFetch<{ status: string }>(`/sessions/${sessionId}/cancel${query}`, {
       method: 'PATCH'
     });
     return;
   } catch {
-    await apiFetch<{ status: string }>(`/sessions/${sessionId}`, {
+    await apiFetch<{ status: string }>(`/sessions/${sessionId}${query}`, {
       method: 'DELETE'
     });
   }
@@ -44,5 +56,42 @@ export async function completeSession(
       }))
     })
   });
+}
+
+export type SwapCandidate = {
+  id: string;
+  name: string;
+};
+
+export async function getSwapCandidates(
+  sessionId: string,
+  exerciseId: string,
+  demoClientId?: string
+): Promise<SwapCandidate[]> {
+  const query = buildDemoClientQuery(demoClientId);
+  const response = await apiFetch<{ candidates: SwapCandidate[] }>(`/sessions/${sessionId}/swap${query}`, {
+    method: 'POST',
+    body: JSON.stringify({ exerciseId })
+  });
+
+  return response.candidates;
+}
+
+export async function applyExerciseSwap(
+  sessionId: string,
+  fromExerciseId: string,
+  toExerciseId: string,
+  demoClientId?: string
+): Promise<{ exercises: SessionExercise[] }> {
+  const query = buildDemoClientQuery(demoClientId);
+  const response = await apiFetch<{ status: string; exercises: SessionExercise[] }>(
+    `/sessions/${sessionId}/swap/apply${query}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ fromExerciseId, toExerciseId })
+    }
+  );
+
+  return { exercises: response.exercises };
 }
 export { type SessionResultInput };

@@ -84,10 +84,18 @@ export function clearLocalCompletionForSessionId(sessionId: string): void {
     return;
   }
 
-  const key = `sid:${sessionId}`;
+  const keySuffix = `:${sessionId}`;
   const map = loadCompletionMap();
-  if (map[key]) {
-    delete map[key];
+  let changed = false;
+
+  Object.keys(map).forEach((key) => {
+    if (key.endsWith(keySuffix)) {
+      delete map[key];
+      changed = true;
+    }
+  });
+
+  if (changed) {
     saveCompletionMap(map);
   }
 }

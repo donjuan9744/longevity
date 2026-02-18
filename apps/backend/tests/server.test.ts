@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { buildServer } from "../src/server.js";
 
 vi.mock("../src/middleware/authMiddleware.js", () => ({
@@ -171,6 +172,11 @@ const weeklyExercisePool = [
     isActive: true
   }
 ];
+
+function toDemoUserId(demoClientId: string): string {
+  const hex = createHash("sha256").update(demoClientId).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 describe("backend routes", () => {
   beforeEach(() => {
@@ -1120,6 +1126,31 @@ describe("backend routes", () => {
     const response = await app.inject({
       method: "POST",
       url: "/sessions/00000000-0000-0000-0000-000000000001/swap",
+      payload: { exerciseId: "ex-1" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().candidates).toHaveLength(1);
+    await app.close();
+  });
+
+  it("returns swap candidates for demo coach client sessions", async () => {
+    const demoClientId = "john-davis";
+    mockPrisma.workoutSession.findUnique.mockResolvedValue({
+      id: "00000000-0000-0000-0000-000000000001",
+      userId: toDemoUserId(demoClientId)
+    });
+    mockPrisma.exercise.findUnique.mockResolvedValue({
+      id: "ex-1",
+      movementPattern: "squat",
+      muscleGroup: "legs"
+    });
+    mockPrisma.exercise.findMany.mockResolvedValue([{ id: "ex-2", name: "Front Squat" }]);
+
+    const app = await buildServer();
+    const response = await app.inject({
+      method: "POST",
+      url: `/sessions/00000000-0000-0000-0000-000000000001/swap?demoClientId=${demoClientId}`,
       payload: { exerciseId: "ex-1" }
     });
 

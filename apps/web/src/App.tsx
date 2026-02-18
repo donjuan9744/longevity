@@ -1,22 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getWeek, refreshWeek } from './api/plans';
 import { cancelSession } from './api/sessions';
-import Badge from './components/Badge';
 import Card from './components/Card';
 import Toast from './components/Toast';
 import { useToast } from './components/useToast';
 import CoachPage from './pages/CoachPage';
 import TodayPage from './pages/TodayPage';
 import WeekPage from './pages/WeekPage';
-import type { WeekResponse } from './types/api';
+import type { SessionExercise, WeekResponse } from './types/api';
 import { getMondayIso } from './utils/dates';
 
 type ViewMode = 'today' | 'week';
 type CompletionPayload = { date: string; type: 'strength' | 'mobility' | 'zone2' | 'recovery'; local: boolean };
+type SwapPayload = {
+  date: string;
+  sessionId: string;
+  fromExerciseId: string;
+  toExerciseId: string;
+  toExerciseName: string;
+};
 
 export default function App() {
   const isCoachMode = typeof window !== 'undefined' && window.location.pathname.startsWith('/coach');
   const [view, setView] = useState<ViewMode>('today');
+  const [coachView, setCoachView] = useState<ViewMode>('today');
   const [weekStart] = useState<string>(() => getMondayIso(new Date()));
   const [weekData, setWeekData] = useState<WeekResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -100,20 +107,106 @@ export default function App() {
           })
         };
       });
+      showToast('Session marked complete.');
       return;
     }
 
     await loadWeek();
+    showToast('Workout marked complete.');
+  }
+
+  function handleSwapApplied(payload: SwapPayload): void {
+    setWeekData((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      const day = prev.days.find((candidate) => candidate.date === payload.date && candidate.type === 'strength');
+      if (!day || day.type !== 'strength') {
+        return prev;
+      }
+
+      const updatedExercises: SessionExercise[] = day.session.exercises.map((exercise) =>
+        exercise.exerciseId === payload.fromExerciseId
+          ? { ...exercise, exerciseId: payload.toExerciseId, name: payload.toExerciseName }
+          : exercise
+      );
+
+      return {
+        ...prev,
+        days: prev.days.map((candidate) => {
+          if (candidate.date !== payload.date || candidate.type !== 'strength' || candidate.sessionId !== payload.sessionId) {
+            return candidate;
+          }
+
+          return {
+            ...candidate,
+            session: {
+              ...candidate.session,
+              exercises: updatedExercises
+            }
+          };
+        })
+      };
+    });
+    showToast('Exercise swapped.');
   }
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <h1>Longevity Coach</h1>
-        <p className="muted">{isCoachMode ? 'Coach dashboard demo' : 'Today-first training plan'}</p>
-        <div className="header-links">
-          <a href="/">Athlete Mode</a>
-          <a href="/coach">Coach Mode</a>
+    <main className="app-shell coach-shell">
+      <header className="app-header app-header-sticky">
+        <div className="app-header-inner">
+          <div className="app-header-left">
+            <h1>Longevity Coach</h1>
+            <p className="muted">Coach Dashboard</p>
+          </div>
+          <div className="app-header-right">
+            <div className="header-segment">
+              <a className={!isCoachMode ? 'header-segment-active' : ''} href="/">
+                Athlete
+              </a>
+              <a className={isCoachMode ? 'header-segment-active' : ''} href="/coach">
+                Coach
+              </a>
+            </div>
+            <div className="header-segment">
+              <button
+                type="button"
+                className={(isCoachMode ? coachView : view) === 'today' ? 'header-segment-active' : ''}
+                onClick={() => {
+                  if (isCoachMode) {
+                    setCoachView('today');
+                    return;
+                  }
+                  setView('today');
+                }}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className={(isCoachMode ? coachView : view) === 'week' ? 'header-segment-active' : ''}
+                onClick={() => {
+                  if (isCoachMode) {
+                    setCoachView('week');
+                    return;
+                  }
+                  setView('week');
+                }}
+              >
+                Week
+              </button>
+            </div>
+            <button
+              className={`btn btn-ghost header-refresh-btn${isCoachMode ? ' header-refresh-btn-hidden' : ''}`}
+              onClick={() => void handleRefresh()}
+              disabled={loading || isCoachMode}
+              aria-hidden={isCoachMode}
+              tabIndex={isCoachMode ? -1 : 0}
+            >
+              Refresh
+            </button>
+          </div>
         </div>
       </header>
 
@@ -124,24 +217,10 @@ export default function App() {
         </Card>
       ) : null}
 
-      {token && isCoachMode ? <CoachPage /> : null}
+      {token && isCoachMode ? <CoachPage view={coachView} /> : null}
 
       {token && !isCoachMode ? (
         <>
-          <section className="actions">
-            <button className="btn" onClick={() => void handleRefresh()} disabled={loading}>
-              Refresh Week
-            </button>
-            <button className="btn btn-ghost" onClick={() => setView(view === 'today' ? 'week' : 'today')}>
-              {view === 'today' ? 'View Week' : 'Back to Today'}
-            </button>
-          </section>
-
-          <div className="view-toggle">
-            <Badge variant={view === 'today' ? 'info' : 'neutral'}>Today</Badge>
-            <Badge variant={view === 'week' ? 'info' : 'neutral'}>Week</Badge>
-          </div>
-
           {loading ? (
             <Card>
               <p className="loading">Loading week...</p>
@@ -168,10 +247,19 @@ export default function App() {
                   week={weekData}
                   completionScope="default"
                   onCancel={(id) => void handleCancel(id)}
+                  onSwapApplied={(payload) => handleSwapApplied(payload)}
                   onCompleted={(payload) => handleCompleted(payload)}
                 />
               )
-              : <WeekPage week={weekData} completionScope="default" onCompleted={(payload) => handleCompleted(payload)} />
+              : (
+                <WeekPage
+                  week={weekData}
+                  completionScope="default"
+                  compactWeekGrid
+                  onSwapApplied={(payload) => handleSwapApplied(payload)}
+                  onCompleted={(payload) => handleCompleted(payload)}
+                />
+              )
             : null}
         </>
       ) : null}

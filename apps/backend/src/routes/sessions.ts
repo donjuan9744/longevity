@@ -38,6 +38,9 @@ const submitBodySchema = z.object({
 const submitQuerySchema = z.object({
   demoClientId: z.string().min(1).optional()
 });
+const demoClientQuerySchema = z.object({
+  demoClientId: z.string().min(1).optional()
+});
 
 const swapBodySchema = z.object({
   exerciseId: z.string().min(1)
@@ -147,6 +150,13 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
           },
           required: ["id"]
         },
+        querystring: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            demoClientId: { type: "string", minLength: 1 }
+          }
+        },
         response: {
           200: {
             type: "object",
@@ -161,8 +171,10 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
       }
     },
     async (request) => {
+      const query = demoClientQuerySchema.parse(request.query);
+      const effectiveUserId = resolveEffectiveUserId(request.user.id, query.demoClientId);
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
-      return cancelWorkoutSession(request.user.id, params.id);
+      return cancelWorkoutSession(effectiveUserId, params.id);
     }
   );
 
@@ -205,6 +217,13 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
             }
           },
           required: ["results"]
+        },
+        querystring: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            demoClientId: { type: "string", minLength: 1 }
+          }
         },
         response: {
           200: {
@@ -278,10 +297,12 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
       }
     },
     async (request) => {
+      const query = demoClientQuerySchema.parse(request.query);
+      const effectiveUserId = resolveEffectiveUserId(request.user.id, query.demoClientId);
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
       const body = swapBodySchema.parse(request.body);
 
-      return swapExercise(request.user.id, params.id, body.exerciseId);
+      return swapExercise(effectiveUserId, params.id, body.exerciseId);
     }
   );
 
@@ -309,6 +330,13 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
             toExerciseId: { type: "string", minLength: 1 }
           },
           required: ["fromExerciseId", "toExerciseId"]
+        },
+        querystring: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            demoClientId: { type: "string", minLength: 1 }
+          }
         },
         response: {
           200: {
@@ -339,10 +367,12 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
       }
     },
     async (request) => {
+      const query = demoClientQuerySchema.parse(request.query);
+      const effectiveUserId = resolveEffectiveUserId(request.user.id, query.demoClientId);
       const params = z.object({ id: z.string().uuid() }).parse(request.params);
       const body = applySwapBodySchema.parse(request.body);
 
-      return applyExerciseSwap(request.user.id, params.id, body.fromExerciseId, body.toExerciseId);
+      return applyExerciseSwap(effectiveUserId, params.id, body.fromExerciseId, body.toExerciseId);
     }
   );
 };

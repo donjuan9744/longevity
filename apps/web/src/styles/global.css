@@ -4,6 +4,8 @@
   font-weight: 400;
   color: #0f172a;
   background: #f3f6fb;
+  --app-content-max: 1440px;
+  --app-content-gutter: 16px;
 }
 
 * {
@@ -21,32 +23,106 @@ body {
 }
 
 .app-shell {
-  max-width: 520px;
+  max-width: var(--app-content-max);
   margin: 0 auto;
-  padding: 16px 16px 24px;
+  padding: 24px var(--app-content-gutter) 24px;
+}
+
+.app-header-sticky {
+  position: sticky;
+  top: 10px;
+  z-index: 50;
+  min-height: 72px;
+  margin: 0 calc(50% - 50vw) 1.15rem;
+  padding: 12px 0;
+}
+
+.app-header-inner {
+  width: 100%;
+  max-width: var(--app-content-max);
+  margin: 0 auto;
+  padding: 14px var(--app-content-gutter);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  background: #fbfdff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+}
+
+.app-header-left {
+  display: grid;
+  gap: 0.2rem;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 1.85rem;
+  font-size: 1.12rem;
   letter-spacing: -0.02em;
 }
 
 .app-header p {
-  margin: 0.35rem 0 0;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.3;
 }
 
-.header-links {
+.app-header-right {
   display: flex;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.header-links a {
-  color: #1d4ed8;
-  font-size: 0.88rem;
-  font-weight: 700;
+.header-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dbe2ee;
+  background: #f8fafc;
+  border-radius: 11px;
+  padding: 2px;
+  min-height: 40px;
+}
+
+.header-segment a,
+.header-segment button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1;
+  font-weight: 600;
   text-decoration: none;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.header-segment-active {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.05);
+}
+
+.header-refresh-btn {
+  min-height: 40px;
+  border-radius: 11px;
+  padding: 0 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.header-refresh-btn-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .actions {
@@ -64,11 +140,11 @@ body {
 
 .card {
   position: relative;
-  background: #ffffff;
+  background: #fcfdff;
   border: 1px solid #e2e8f0;
   border-radius: 16px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-  padding: 1rem;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.045);
+  padding: 1.25rem;
 }
 
 .card-compact {
@@ -81,9 +157,10 @@ body {
   top: 10px;
   bottom: 10px;
   left: 0;
-  width: 4px;
+  width: 3px;
   border-radius: 4px;
   background: var(--accent-color, #2563eb);
+  opacity: 0.68;
 }
 
 .card-head {
@@ -119,6 +196,42 @@ body {
 .section-title p {
   margin: 0.2rem 0 0;
   color: #64748b;
+}
+
+.athlete-today-header {
+  margin: 0 0 2rem;
+}
+
+.athlete-today-header h2 {
+  margin: 0;
+  font-size: clamp(1.3rem, 2.2vw, 1.5rem);
+  line-height: 1.2;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.athlete-today-subtext {
+  margin: 0.45rem 0 0;
+  font-size: 0.94rem;
+  color: rgba(71, 85, 105, 0.68);
+}
+
+.athlete-today-meta {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.athlete-today-progress {
+  margin: 0.8rem 0 0;
+  font-size: 0.86rem;
+}
+
+.athlete-today-layout {
+  display: grid;
+  gap: 2rem;
 }
 
 .badge-row {
@@ -170,7 +283,18 @@ body {
   margin: 0.75rem 0;
   padding: 0;
   display: grid;
-  gap: 0.55rem;
+  gap: 0.8rem;
+}
+
+.athlete-exercise-list {
+  margin: 1rem 0 0;
+  gap: 0;
+}
+
+.athlete-exercise-wrap {
+  width: 100%;
+  max-width: 860px;
+  margin-inline: auto;
 }
 
 .exercise-item {
@@ -184,6 +308,34 @@ body {
   border-radius: 12px;
 }
 
+.athlete-exercise-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.9rem;
+  width: 100%;
+  padding: 0.55rem 0;
+  border: 0;
+  background: transparent;
+}
+
+.athlete-exercise-row + .athlete-exercise-row {
+  border-top: 1px solid #edf2f7;
+}
+
+.athlete-exercise-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.athlete-exercise-row-single {
+  display: block;
+  padding: 0.3rem 0;
+}
+
 .exercise-name,
 .exercise-detail,
 .exercise-intensity {
@@ -194,10 +346,72 @@ body {
   font-weight: 600;
 }
 
+.athlete-exercise-name {
+  font-size: 1.03rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #1f2937;
+}
+
 .exercise-detail,
 .exercise-intensity {
-  color: #64748b;
+  color: #94a3b8;
   font-size: 0.9rem;
+}
+
+.athlete-exercise-detail {
+  margin-top: 0.2rem;
+  color: rgba(71, 85, 105, 0.7);
+  font-size: 0.86rem;
+}
+
+.exercise-intensity {
+  font-size: 0.77rem;
+  color: #a3afbf;
+}
+
+.athlete-exercise-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+
+.athlete-intensity-pill {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 600;
+  width: auto;
+  flex: 0 0 auto;
+  justify-content: center;
+  padding: 0.08rem 0.42rem;
+}
+
+.athlete-swap-btn {
+  min-height: 22px;
+  border-radius: 10px;
+  border-color: #e5ebf3;
+  padding: 0.04rem 0.2rem;
+  font-size: 0.68rem;
+}
+
+.exercise-actions {
+  display: grid;
+  justify-items: end;
+  gap: 0.4rem;
+}
+
+.today-minutes {
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .preview {
@@ -209,21 +423,295 @@ body {
   color: #475569;
 }
 
-.week-list {
+.athlete-session-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  padding: 1.5rem;
+}
+
+.athlete-meta-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  padding: 1.25rem;
+  height: fit-content;
+}
+
+.athlete-meta-block + .athlete-meta-block {
+  margin-top: 1rem;
+}
+
+.athlete-meta-label {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(71, 85, 105, 0.75);
+}
+
+.coach-dashboard {
+  display: grid;
+  gap: 2rem;
+}
+
+.coach-client-trigger {
+  display: inline-flex;
+}
+
+.coach-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.25);
+  z-index: 75;
+}
+
+.coach-sidebar {
+  position: fixed;
+  top: 69px;
+  bottom: 0;
+  left: 0;
+  width: min(290px, 88vw);
+  background: #ffffff;
+  border-right: 1px solid #e8edf5;
+  padding: 1.25rem;
+  overflow: auto;
+  transform: translateX(-102%);
+  transition: transform 180ms ease;
+  z-index: 80;
+}
+
+.coach-sidebar-open {
+  transform: translateX(0);
+}
+
+.coach-sidebar-head {
   display: grid;
   gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+
+.coach-sidebar-title {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.coach-client-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.05rem;
+}
+
+.coach-client-item {
+  width: 100%;
+  border: 1px solid #e8edf5;
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+  padding: 0.85rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.coach-client-item:hover {
+  background: #f8fafc;
+}
+
+.coach-client-item-active {
+  background: #f8fafc;
+  border-left: 4px solid #2563eb;
+  padding-left: 0.65rem;
+}
+
+.coach-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  margin-top: 0.35rem;
+}
+
+.coach-status-on-track {
+  background: #16a34a;
+}
+
+.coach-status-moderate {
+  background: #eab308;
+}
+
+.coach-status-high {
+  background: #ef4444;
+}
+
+.coach-client-copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.coach-client-copy strong {
+  font-size: 0.92rem;
+}
+
+.coach-client-copy span {
+  font-size: 0.76rem;
+}
+
+.coach-main,
+.coach-rail {
+  display: grid;
+  gap: 2rem;
+}
+
+.coach-section-header {
+  margin-bottom: 1rem;
+}
+
+.coach-section-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.coach-section-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.83rem;
+}
+
+.week-list {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.week-grid-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.week-day-tile {
+  min-height: 148px;
+  border: 1px solid rgba(203, 213, 225, 0.6);
+  border-radius: 16px;
+  background: #fcfdff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  padding: 0.8rem;
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.week-day-tile:hover {
+  background: #f8fafc;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.1);
+}
+
+.week-day-tile-today {
+  background: rgba(219, 234, 254, 0.35);
+  box-shadow: 0 0 0 1px rgba(191, 219, 254, 0.6);
+}
+
+.week-day-tile-complete {
+  background: #f8fafc;
+  opacity: 0.92;
+}
+
+.week-day-tile-head {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.week-day-tile-date {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.week-day-tile-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.week-day-tile-preview {
+  margin: 0;
+  padding-left: 1rem;
+  color: #64748b;
+  font-size: 0.79rem;
+  line-height: 1.3;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.week-day-tile-preview li {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.week-day-tile-fallback {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.week-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.3);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  z-index: 110;
+  padding: 1rem;
+}
+
+.week-modal {
+  width: min(920px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #dbe2ee;
+  border-radius: 16px;
+  box-shadow: 0 20px 36px rgba(15, 23, 42, 0.18);
+  padding: 1rem;
+}
+
+.week-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.week-modal-close {
+  min-height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 0 0.75rem;
 }
 
 .coach-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.6rem;
-  margin-bottom: 0.75rem;
+  gap: 0.8rem;
 }
 
 .coach-field {
   display: grid;
-  gap: 0.3rem;
+  gap: 0.4rem;
 }
 
 .coach-field span {
@@ -233,13 +721,105 @@ body {
 }
 
 .coach-field input,
-.coach-field select {
+.coach-field select,
+.coach-field textarea {
   min-height: 40px;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
-  padding: 0.45rem 0.55rem;
+  padding: 0.55rem 0.65rem;
   background: #ffffff;
   color: #0f172a;
+}
+
+.coach-field textarea {
+  resize: vertical;
+}
+
+.coach-button-row {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+}
+
+.coach-button-row-compact .btn {
+  min-height: 40px;
+  height: 40px;
+  padding: 0 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.coach-grid-compact {
+  grid-template-columns: 1fr 1fr;
+}
+
+.coach-manual-block {
+  margin-top: 1rem;
+}
+
+.coach-inline-label {
+  margin: 0 0 0.75rem;
+}
+
+.coach-rail-card {
+  padding: 0.95rem;
+}
+
+.coach-impact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.coach-impact-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  border: 1px solid #dbe2ee;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0 0.6rem;
+}
+
+.coach-insights-toggle {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #dbe2ee;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.coach-insights-card {
+  display: none;
+}
+
+.coach-insights-open .coach-insights-card {
+  display: block;
+  margin-top: 0.6rem;
+}
+
+.coach-insights-list {
+  margin: 0;
+  padding-left: 1rem;
+  color: #334155;
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.83rem;
+}
+
+.coach-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
 }
 
 .week-card-actions {
@@ -255,6 +835,15 @@ body {
   font-weight: 600;
   padding: 0.35rem 0.6rem;
   cursor: pointer;
+}
+
+.week-day-card-today {
+  border-color: #93c5fd;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.08);
+}
+
+.week-day-card-complete {
+  background: #f8fafc;
 }
 
 .complete-block {
@@ -304,9 +893,9 @@ body {
 .btn {
   min-height: 44px;
   border: none;
-  border-radius: 12px;
+  border-radius: 11px;
   padding: 0.7rem 1rem;
-  background: #2563eb;
+  background: #2b5fd8;
   color: #eff6ff;
   font-size: 0.95rem;
   font-weight: 700;
@@ -324,16 +913,54 @@ body {
   border: 1px solid #c7d2fe;
 }
 
+.btn-soft-primary {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
 .btn-danger {
   margin-top: 0.75rem;
   width: 100%;
-  background: #ef4444;
-  color: #fff1f2;
+  background: #fff1f2;
+  color: #b91c1c;
+  border: 1px solid #fecdd3;
 }
 
 .btn-primary-action {
   margin-top: 0.55rem;
   width: 100%;
+}
+
+.athlete-complete-btn {
+  margin-top: 1.5rem;
+  min-height: 52px;
+  border-radius: 16px;
+  font-weight: 800;
+}
+
+.athlete-complete-btn:hover:enabled {
+  filter: brightness(0.96);
+}
+
+.btn-primary-action:disabled {
+  background: #dbeafe;
+  color: #475569;
+  opacity: 1;
+}
+
+.coach-apply-btn {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.btn-swap {
+  min-height: 34px;
+  border-radius: 11px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
 }
 
 .helper-text {
@@ -366,8 +993,17 @@ body {
 }
 
 @media (min-width: 520px) {
+  :root {
+    --app-content-gutter: 20px;
+  }
+
   .app-shell {
-    padding: 20px 20px 28px;
+    padding: 24px var(--app-content-gutter) 28px;
+  }
+
+  .app-header-sticky {
+    margin: 0 calc(50% - 50vw) 1.1rem;
+    padding: 12px 0;
   }
 
   .actions {
@@ -376,5 +1012,164 @@ body {
 
   .coach-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .coach-button-row {
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+  }
+}
+
+@media (min-width: 640px) {
+  .app-header-inner {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    column-gap: 20px;
+  }
+
+  .app-header-right {
+    justify-self: end;
+  }
+
+  .coach-main {
+    order: 1;
+  }
+
+  .coach-rail {
+    order: 2;
+  }
+
+  .coach-insights-toggle {
+    display: none;
+  }
+
+  .coach-insights-card {
+    display: block;
+  }
+
+  .week-grid-overview {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .week-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --app-content-gutter: 24px;
+  }
+
+  .app-shell.coach-shell {
+    max-width: var(--app-content-max);
+    padding: 24px var(--app-content-gutter) 32px;
+  }
+
+  .app-header-sticky {
+    margin: 0 calc(50% - 50vw) 1.5rem;
+    padding: 12px 0;
+  }
+
+  .coach-dashboard {
+    grid-template-columns: 280px minmax(0, 8.8fr) minmax(280px, 3.2fr);
+    align-items: start;
+  }
+
+  .week-grid-overview {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .week-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.35rem;
+  }
+
+  .coach-client-trigger,
+  .coach-drawer-backdrop {
+    display: none;
+  }
+
+  .coach-sidebar {
+    position: sticky;
+    top: 84px;
+    transform: none;
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+  }
+
+  .coach-main {
+    order: 2;
+  }
+
+  .coach-rail {
+    order: 3;
+  }
+
+  .coach-rail {
+    position: sticky;
+    top: 84px;
+  }
+
+  .athlete-today-layout {
+    width: 100%;
+    margin-inline: 0;
+    grid-template-columns: minmax(0, 800px) minmax(360px, 380px);
+    gap: 28px;
+    align-items: start;
+    justify-items: start;
+  }
+
+  .athlete-session-card {
+    width: 100%;
+    max-width: 800px;
+    justify-self: stretch;
+  }
+
+  .athlete-meta-card {
+    width: min(100%, 380px);
+    max-width: 380px;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 639px) {
+  .athlete-today-header {
+    margin-bottom: 1.4rem;
+  }
+
+  .athlete-session-card {
+    padding: 1rem;
+  }
+
+  .athlete-meta-card {
+    padding: 1rem;
+  }
+
+  .athlete-exercise-list {
+    gap: 0;
+  }
+
+  .athlete-exercise-wrap {
+    max-width: 100%;
+  }
+
+  .athlete-exercise-row {
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.5rem 0;
+  }
+
+  .athlete-exercise-row-single {
+    display: block;
+  }
+
+  .athlete-exercise-actions {
+    gap: 0.45rem;
+  }
+
+  .athlete-complete-btn {
+    min-height: 48px;
   }
 }
